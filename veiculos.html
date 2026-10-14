@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LogiPalete - Cadastro de Veículos</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <h1>LogiPalete <span>| Veículos Padrão</span></h1>
+    <nav>
+      <button class="nav-btn" onclick="location.href='produtos.html'">Produtos & Normas</button>
+      <button class="nav-btn active" onclick="location.href='veiculos.html'">Veículos Padrão</button>
+      <button class="nav-btn" onclick="location.href='simulacao.html'">Simulação & Carregamento</button>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Cadastrar Veículo Padrão para Transporte</h2>
+      <form id="form-veiculo">
+        <input type="hidden" id="veic-id">
+        <div class="form-grid">
+          <div class="field">
+            <label>Tipo de Veículo</label>
+            <select id="veic-tipo" required>
+              <option value="Sider">Carreta Sider (Descarga Lateral)</option>
+              <option value="Bau">Caminhão / Carreta Baú (Descarga Fundo)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Nome / Identificação</label>
+            <input type="text" id="veic-nome" placeholder="Ex.: Sider 14,60m Padrão" required>
+          </div>
+          <div class="field">
+            <label>Comprimento Útil (m)</label>
+            <input type="number" step="0.01" id="veic-comprimento" placeholder="14.6" required>
+          </div>
+          <div class="field">
+            <label>Largura Útil (m)</label>
+            <input type="number" step="0.01" id="veic-largura" placeholder="2.45" required>
+          </div>
+          <div class="field">
+            <label>Altura Útil (m)</label>
+            <input type="number" step="0.01" id="veic-altura" placeholder="2.70" required>
+          </div>
+        </div>
+        <div class="form-actions" style="margin-top: 15px;">
+          <button type="submit" class="btn-primary">Salvar Veículo</button>
+        </div>
+      </form>
+
+      <h3 style="margin-top: 30px;">Veículos Cadastrados</h3>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Nome</th>
+              <th>Dimensões (C x L x A)</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="lista-veiculos"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="veiculos.js"></script>
+</body>
+</html>

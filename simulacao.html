@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LogiPalete - Simulação e Carregamento</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+  <header class="navbar">
+    <h1>LogiPalete <span>| Simulação & Carregamento</span></h1>
+    <nav>
+      <button class="nav-btn" onclick="location.href='produtos.html'">Produtos & Normas</button>
+      <button class="nav-btn" onclick="location.href='veiculos.html'">Veículos Padrão</button>
+      <button class="nav-btn active" onclick="location.href='simulacao.html'">Simulação & Carregamento</button>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Simulação de Carregamento Batido Organizado (Múltiplos Produtos)</h2>
+      <p class="help-text">Selecione os produtos (com suas grades) e informe a quantidade de jogos para simular a carga e o desmembramento de paletes.</p>
+      
+      <div id="simulacao-produtos-container"></div>
+      
+      <button type="button" class="btn-secondary" onclick="adicionarLinhaSimulacao()" style="margin-bottom: 15px;">+ Adicionar Outro Produto na Carga</button>
+
+      <div class="form-grid" style="border-top: 1px solid #e2e8f0; padding-top: 15px;">
+        <div class="field">
+          <label>Selecione o Veículo Padrão</label>
+          <select id="sim-veiculo" required></select>
+        </div>
+      </div>
+
+      <div class="form-actions" style="margin-top: 15px;">
+        <button class="btn-primary" onclick="executarSimulacaoMultipla()">Gerar Plano de Carregamento Inteligente</button>
+      </div>
+    </section>
+
+    <!-- ÁREA IMPRESSA / EXPORTADA -->
+    <div id="relatorio-impressao" class="card hidden">
+      <div class="header-impressao">
+        <h2>Ficha de Instrução de Carregamento e Paletização</h2>
+        <p>Planejamento de carga batida e desmembramento inteligente de paletes no destino.</p>
+      </div>
+
+      <div id="sim-resumo" class="resumo-box"></div>
+
+      <h3>1. Planejamento e Desmembramento de Paletes no Destino</h3>
+      <div id="sim-paletes-desmembramento" class="resumo-box"></div>
+      <div class="canvas-wrapper">
+        <canvas id="canvas-palete" width="400" height="300"></canvas>
+      </div>
+
+      <h3>2. Estratégia Visual de Arrumação na Carga Batida</h3>
+      <p class="help-text" id="desc-estrategia"></p>
+      <div class="canvas-wrapper">
+        <h4>Vista Superior (Planta Baixa)</h4>
+        <canvas id="canvas-carga-top" width="750" height="220"></canvas>
+        <h4>Vista Lateral (Elevação)</h4>
+        <canvas id="canvas-carga-side" width="750" height="200"></canvas>
+      </div>
+
+      <h3>3. Instruções Descritivas ao Fornecedor e Operação</h3>
+      <div id="sim-instrucoes" class="instrucoes-box"></div>
+
+      <div class="form-actions print-hide" style="margin-top: 20px;">
+        <button class="btn-primary" onclick="exportarPDF()">📄 Exportar Ficha em PDF</button>
+        <button class="btn-secondary" onclick="exportarImagensPNG()">🖼️ Baixar Desenhos em PNG</button>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="simulacao.js"></script>
+</body>
+</html>

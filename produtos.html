@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LogiPalete - Cadastro de Produtos e Normas</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <h1>LogiPalete <span>| Produtos & Normas</span></h1>
+    <nav>
+      <button class="nav-btn active" onclick="location.href='produtos.html'">Produtos & Normas</button>
+      <button class="nav-btn" onclick="location.href='veiculos.html'">Veículos Padrão</button>
+      <button class="nav-btn" onclick="location.href='simulacao.html'">Simulação & Carregamento</button>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Cadastrar / Editar Produto e Normas de Paletização</h2>
+      <form id="form-produto">
+        <input type="hidden" id="prod-id">
+        <div class="form-grid">
+          <div class="field">
+            <label>Código do Produto</label>
+            <input type="text" id="prod-codigo" required placeholder="Ex.: RUP-001">
+          </div>
+          <div class="field">
+            <label>Descrição</label>
+            <input type="text" id="prod-descricao" required placeholder="Ex.: Guarda-Roupa Casal 6 Portas">
+          </div>
+          <div class="field">
+            <label>Grade (Cor / Variação)</label>
+            <input type="text" id="prod-grade" placeholder="Ex.: Avelã/Off-White">
+          </div>
+          <div class="field">
+            <label>Fornecedor</label>
+            <input type="text" id="prod-fornecedor" required placeholder="Ex.: Móveis Silva">
+          </div>
+        </div>
+
+        <h3 style="margin-top: 20px;">Normas de Paletização (Blocos Fixos WMS)</h3>
+        <p class="help-text">Selecione o unifizador fixo e agrupe os volumes correspondentes a cada norma, exatamente como no seu WMS.</p>
+        
+        <div id="normas-container"></div>
+        
+        <button type="button" class="btn-secondary" onclick="adicionarNormaBloco()" style="margin-top: 10px;">+ Adicionar Nova Norma de Paletização</button>
+
+        <div class="form-actions" style="margin-top: 25px;">
+          <button type="submit" class="btn-primary">Salvar Produto e Normas</button>
+          <button type="button" class="btn-secondary" onclick="resetFormProduto()">Limpar</button>
+        </div>
+      </form>
+    </section>
+
+    <div class="card">
+      <h2>Produtos Cadastrados</h2>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Descrição</th>
+              <th>Grade</th>
+              <th>Fornecedor</th>
+              <th>Normas / Volumes</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="lista-produtos"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="produtos.js"></script>
+</body>
+</html>
