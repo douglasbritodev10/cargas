@@ -1,0 +1,259 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  background-color: #f4f6f9;
+  color: #333;
+  padding-bottom: 40px;
+}
+
+.navbar {
+  background-color: #1e293b;
+  color: #fff;
+  padding: 15px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.navbar h1 {
+  font-size: 1.2rem;
+}
+
+.navbar h1 span {
+  font-weight: 300;
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
+nav {
+  display: flex;
+  gap: 8px;
+}
+
+.nav-btn {
+  background: transparent;
+  border: 1px solid #475569;
+  color: #f8fafc;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.nav-btn.active, .nav-btn:hover {
+  background-color: #0284c7;
+  border-color: #0284c7;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 20px auto;
+  padding: 0 15px;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.card h2 {
+  font-size: 1.1rem;
+  color: #0f172a;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 8px;
+}
+
+.card h3 {
+  font-size: 0.95rem;
+  color: #334155;
+  margin: 15px 0 8px 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #475569;
+}
+
+input, select {
+  padding: 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  font-size: 0.85rem;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: #0284c7;
+}
+
+.volume-row {
+  display: grid;
+  grid-template-columns: 80px 1fr repeat(4, 75px) 40px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  background: #f8fafc;
+  padding: 8px;
+  border-radius: 5px;
+  border: 1px solid #e2e8f0;
+}
+
+.btn-remove {
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  height: 32px;
+  font-weight: bold;
+}
+
+.btn-primary {
+  background-color: #0284c7;
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover {
+  background-color: #0369a1;
+}
+
+.btn-secondary {
+  background-color: #e2e8f0;
+  color: #334155;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.form-actions {
+  margin-top: 15px;
+  display: flex;
+  gap: 10px;
+}
+
+.info-banner {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+.table-responsive {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 0.85rem;
+}
+
+th, td {
+  border: 1px solid #e2e8f0;
+  padding: 10px;
+  text-align: left;
+}
+
+th {
+  background-color: #f1f5f9;
+  color: #334155;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.help-text {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.canvas-wrapper {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+canvas {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin-top: 5px;
+}
+
+.resumo-box, .instrucoes-box {
+  background: #f1f5f9;
+  border-left: 4px solid #0284c7;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.instrucoes-box ul {
+  padding-left: 20px;
+}
+
+/* Responsividade Mobile */
+@media (max-width: 768px) {
+  .volume-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .navbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
