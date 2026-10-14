@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,6 +10,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
+
 <body>
 
   <header class="navbar">
@@ -21,7 +23,7 @@
   </header>
 
   <main class="container">
-    
+
     <!-- ABA: PRODUTOS, VOLUMES E NORMAS -->
     <section id="tab-produtos" class="tab-content active">
       <div class="card">
@@ -56,7 +58,8 @@
           <div class="form-grid">
             <div class="field">
               <label>Tipo / Dimensões do Palete (m)</label>
-              <input type="text" id="norma-dimensao" placeholder="Ex.: PBR 1,20 x 1,00 ou Específico 1,60 x 1,60" required>
+              <input type="text" id="norma-dimensao" placeholder="Ex.: PBR 1,20 x 1,00 ou Específico 1,60 x 1,60"
+                required>
             </div>
             <div class="field">
               <label>Lastro (qtd caixas por camada)</label>
@@ -159,34 +162,41 @@
     <!-- ABA: SIMULAÇÃO E INSTRUÇÃO DE CARGA -->
     <section id="tab-simulacao" class="tab-content">
       <div class="card">
-        <h2>Simulação de Carregamento Batido Organizado</h2>
-        <div class="form-grid">
+        <h2>Simulação de Carregamento Batido Organizado (Múltiplos Produtos)</h2>
+        <p class="help-text">Selecione os produtos com suas respectivas grades e informe a quantidade de jogos de cada
+          um para compor a carga do veículo.</p>
+
+        <div id="simulacao-produtos-container">
+          <!-- Linhas de produtos adicionados à simulação serão injetadas aqui -->
+        </div>
+
+        <button type="button" class="btn-secondary" onclick="adicionarLinhaSimulacao()" style="margin-bottom: 15px;">+
+          Adicionar Outro Produto na Carga</button>
+
+        <div class="form-grid" style="margin-top: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
           <div class="field">
-            <label>Selecione o Produto</label>
-            <select id="sim-produto" required></select>
-          </div>
-          <div class="field">
-            <label>Quantidade de Jogos (Kits)</label>
-            <input type="number" id="sim-qtd" value="30" min="1" required>
-          </div>
-          <div class="field">
-            <label>Selecione o Veículo</label>
+            <label>Selecione o Veículo Padrão</label>
             <select id="sim-veiculo" required></select>
           </div>
         </div>
-        <button class="btn-primary" onclick="executarSimulacao()">Gerar Plano de Carregamento</button>
+
+        <div class="form-actions">
+          <button class="btn-primary" onclick="executarSimulacaoMultipla()">Gerar Plano de Carregamento
+            Inteligente</button>
+        </div>
       </div>
 
       <!-- ÁREA IMPRESSA / EXPORTADA -->
       <div id="relatorio-impressao" class="card hidden">
         <div class="header-impressao">
-          <h2>Ficha de Instrução de Carregamento ao Fornecedor</h2>
-          <p>Instruções para carga batida com agilidade de montagem de paletes no destino.</p>
+          <h2>Ficha de Instrução de Carregamento e Paletização</h2>
+          <p>Planejamento de carga batida e desmembramento inteligente de paletes no destino.</p>
         </div>
 
         <div id="sim-resumo" class="resumo-box"></div>
 
-        <h3>1. Desenho da Norma de Paletização no Destino</h3>
+        <h3>1. Planejamento e Desmembramento de Paletes no Destino</h3>
+        <div id="sim-paletes-desmembramento" class="resumo-box"></div>
         <div class="canvas-wrapper">
           <canvas id="canvas-palete" width="400" height="300"></canvas>
         </div>
@@ -200,7 +210,7 @@
           <canvas id="canvas-carga-side" width="750" height="200"></canvas>
         </div>
 
-        <h3>3. Instruções Descritivas ao Fornecedor</h3>
+        <h3>3. Instruções Descritivas ao Fornecedor e Operação</h3>
         <div id="sim-instrucoes" class="instrucoes-box"></div>
 
         <div class="form-actions print-hide">
@@ -215,4 +225,5 @@
   <script type="module" src="firebase.js"></script>
   <script type="module" src="app.js"></script>
 </body>
+
 </html>
