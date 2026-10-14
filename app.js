@@ -302,7 +302,7 @@ function desenharPalete(produto) {
   ctx.fillText(`Norma: ${produto.norma.dimensao} | ${produto.norma.jogosPorPalete} jogos/palete`, 80, 25);
 }
 
-// Canvas 2 e 3: Arranjo da Carga
+// Canvas 2 e 3: Arranjo Inteligente da Carga por Jogos
 function desenharCarga(produto, veiculo, qtdJogos) {
   const cvTop = document.getElementById('canvas-carga-top');
   const ctxT = cvTop.getContext('2d');
@@ -312,63 +312,72 @@ function desenharCarga(produto, veiculo, qtdJogos) {
   ctxT.clearRect(0, 0, cvTop.width, cvTop.height);
   ctxS.clearRect(0, 0, cvSide.width, cvSide.height);
 
-  // Desenho do Veículo
   const isSider = veiculo.tipo === "Sider";
+  
   document.getElementById('desc-estrategia').innerHTML = isSider
-    ? "<strong>Estratégia Sider:</strong> Carga arrumada em BLOCOS de jogos ao longo da lateral. A descarga é feita abrindo a lona lateral, retirando jogo por jogo e montando diretamente no palete."
-    : "<strong>Estratégia Baú:</strong> Carga disposta em FILEIRAS (do fundo até a porta). Os volumes do mesmo jogo ficam lado a lado para serem descarregados em sequência pelo fundo.";
+    ? `<strong>Estratégia Sider (${qtdJogos} Jogos):</strong> Os jogos estão agrupados em blocos estruturados ao longo da lateral. Cada bloco contém todos os volumes (${produto.volumes.length} volumes) do mesmo jogo. Ao abrir a lona, a equipe remove os jogos lateralmente em ordem de rota ou lote.`
+    : `<strong>Estratégia Baú (${qtdJogos} Jogos):</strong> Os jogos são dispostos em fileiras organizadas do <strong>fundo para a porta traseira</strong>. O Jogo 1 fica na posição de saída (porta), permitindo a descarga sequencial sem desarrumar o restante da carga.`;
 
   // Moldura do Veículo
   [ctxT, ctxS].forEach(ctx => {
     ctx.fillStyle = "#e2e8f0";
-    ctx.fillRect(50, 40, 650, 120);
+    ctx.fillRect(40, 30, 670, 140);
     ctx.strokeStyle = "#334155";
     ctx.lineWidth = 2;
-    ctx.strokeRect(50, 40, 650, 120);
+    ctx.strokeRect(40, 30, 670, 140);
 
     // Cabine
     ctx.fillStyle = "#94a3b8";
-    ctx.fillRect(10, 40, 40, 120);
+    ctx.fillRect(10, 30, 30, 140);
     ctx.fillStyle = "#0f172a";
-    ctx.font = "11px sans-serif";
-    ctx.fillText("CABINE", 12, 105);
+    ctx.font = "10px sans-serif";
+    ctx.fillText("CAB", 13, 100);
   });
 
-  // Indicadores de Porta / Lona
+  // Indicadores de Descarga
   if (isSider) {
     ctxT.fillStyle = "#ef4444";
-    ctxT.fillText("⬇ ABERTURA LATERAL PARA DESCARGA (LONA) ⬇", 230, 25);
+    ctxT.font = "bold 11px sans-serif";
+    ctxT.fillText("⬇ DESCARGA LATERAL (ABERTURA DE LONA) ⬇", 220, 20);
   } else {
     ctxT.fillStyle = "#ef4444";
-    ctxT.fillText("PORTA TRASEIRA (DESCARGA) ➡", 500, 25);
+    ctxT.font = "bold 11px sans-serif";
+    ctxT.fillText("PORTA TRASEIRA (INÍCIO DA DESCARGA) ➡", 470, 20);
   }
 
-  // Desenho dos Blocos/Jogos de Caixas
-  const totalBlocos = Math.min(qtdJogos, 12); // Limite visual de blocos
-  const larguraBloco = 630 / totalBlocos;
+  // Desenho dos Blocos de Jogos de forma inteligente (máximo visual de 15 colunas/fileiras para caber bem)
+  const colunasMaximas = Math.min(qtdJogos, 15);
+  const larguraBloco = 650 / colunasMaximas;
 
-  for (let i = 0; i < totalBlocos; i++) {
-    const x = 55 + (i * larguraBloco);
+  for (let i = 0; i < colunasMaximas; i++) {
+    const x = 45 + (i * larguraBloco);
+    const numJogoLabel = i + 1;
 
-    // Vista Topo (Blocos Agrupados por Jogo)
+    // Vista Topo (Planta Baixa) - Agrupando os volumes do mesmo jogo
     ctxT.fillStyle = (i % 2 === 0) ? "#f59e0b" : "#fbbf24";
-    ctxT.fillRect(x + 2, 45, larguraBloco - 4, 110);
+    ctxT.fillRect(x + 1, 35, larguraBloco - 2, 130);
     ctxT.strokeStyle = "#b45309";
-    ctxT.strokeRect(x + 2, 45, larguraBloco - 4, 110);
+    ctxT.strokeRect(x + 1, 35, larguraBloco - 2, 130);
 
     ctxT.fillStyle = "#0f172a";
-    ctxT.font = "10px sans-serif";
-    ctxT.fillText(`J${i+1}`, x + (larguraBloco/2) - 6, 100);
+    ctxT.font = "9px sans-serif";
+    ctxT.fillText(`J${numJogoLabel}`, x + 3, 50);
 
-    // Vista Lateral
+    // Vista Lateral (Elevação)
     ctxS.fillStyle = (i % 2 === 0) ? "#10b981" : "#34d399";
-    ctxS.fillRect(x + 2, 50, larguraBloco - 4, 100);
+    ctxS.fillRect(x + 1, 35, larguraBloco - 2, 130);
     ctxS.strokeStyle = "#047857";
-    ctxS.strokeRect(x + 2, 50, larguraBloco - 4, 100);
+    ctxS.strokeRect(x + 1, 35, larguraBloco - 2, 130);
 
     ctxS.fillStyle = "#0f172a";
-    ctxS.font = "10px sans-serif";
-    ctxS.fillText(`Jogo ${i+1}`, x + 2, 100);
+    ctxS.font = "9px sans-serif";
+    ctxS.fillText(`J${numJogoLabel}`, x + 3, 50);
+  }
+
+  if (qtdJogos > 15) {
+    ctxT.fillStyle = "#0f172a";
+    ctxT.font = "bold 10px sans-serif";
+    ctxT.fillText(`... (${qtdJogos} jogos no total da simulação)`, 300, 185);
   }
 }
 
