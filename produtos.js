@@ -12,6 +12,8 @@ const TIPOS_UNIFIZADOR = [
 window.adicionarNormaBloco = function(normaData = {}) {
   normaCount++;
   const container = document.getElementById('normas-container');
+  if (!container) return;
+  
   const normaId = `norma-bloco-${normaCount}`;
   const volumesContainerId = `volumes-in-norma-${normaCount}`;
 
@@ -74,7 +76,9 @@ window.adicionarNormaBloco = function(normaData = {}) {
 
 window.addVolumeEmNorma = function(containerId, vol = {}) {
   const container = document.getElementById(containerId);
-  const volRowId = 'vol-item-' + Date.now() + Math.random().toString(36).substring(2, 5));
+  if (!container) return;
+  
+  const volRowId = 'vol-item-' + Date.now() + Math.random().toString(36).substring(2, 5);
   
   const div = document.createElement('div');
   div.className = 'volume-row';
@@ -93,68 +97,72 @@ window.addVolumeEmNorma = function(containerId, vol = {}) {
   container.appendChild(div);
 };
 
-document.getElementById('form-produto').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  
-  const normasBlocos = [];
-  document.querySelectorAll('#normas-container > div').forEach(blocoCard => {
-    const unificador = blocoCard.querySelector('.norma-unificador').value;
-    const padrao = blocoCard.querySelector('.norma-padrao').value;
-    const lastro = parseInt(blocoCard.querySelector('.norma-lastro').value) || 1;
-    const camadas = parseInt(blocoCard.querySelector('.norma-camadas').value) || 1;
-    const jogosPorPalete = parseInt(blocoCard.querySelector('.norma-jogos').value) || 1;
+const formProduto = document.getElementById('form-produto');
+if (formProduto) {
+  formProduto.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const normasBlocos = [];
+    document.querySelectorAll('#normas-container > div').forEach(blocoCard => {
+      const unificador = blocoCard.querySelector('.norma-unificador').value;
+      const padrao = blocoCard.querySelector('.norma-padrao').value;
+      const lastro = parseInt(blocoCard.querySelector('.norma-lastro').value) || 1;
+      const camadas = parseInt(blocoCard.querySelector('.norma-camadas').value) || 1;
+      const jogosPorPalete = parseInt(blocoCard.querySelector('.norma-jogos').value) || 1;
 
-    const volumesDesteBloco = [];
-    blocoCard.querySelectorAll('.volume-row').forEach(row => {
-      volumesDesteBloco.push({
-        numero: row.querySelector('.vol-num').value,
-        descricao: row.querySelector('.vol-desc').value,
-        altura: parseFloat(row.querySelector('.vol-alt').value) || 0,
-        largura: parseFloat(row.querySelector('.vol-larg').value) || 0,
-        prof: parseFloat(row.querySelector('.vol-prof').value) || 0,
-        peso: parseFloat(row.querySelector('.vol-peso').value) || 0
+      const volumesDesteBloco = [];
+      blocoCard.querySelectorAll('.volume-row').forEach(row => {
+        volumesDesteBloco.push({
+          numero: row.querySelector('.vol-num').value,
+          descricao: row.querySelector('.vol-desc').value,
+          altura: parseFloat(row.querySelector('.vol-alt').value) || 0,
+          largura: parseFloat(row.querySelector('.vol-larg').value) || 0,
+          prof: parseFloat(row.querySelector('.vol-prof').value) || 0,
+          peso: parseFloat(row.querySelector('.vol-peso').value) || 0
+        });
+      });
+
+      normasBlocos.push({
+        unificador,
+        padrao,
+        lastro,
+        camadas,
+        jogosPorPalete,
+        volumes: volumesDesteBloco
       });
     });
 
-    normasBlocos.push({
-      unificador,
-      padrao,
-      lastro,
-      camadas,
-      jogosPorPalete,
-      volumes: volumesDesteBloco
-    });
+    if (normasBlocos.length === 0) return alert("Adicione pelo menos uma norma!");
+
+    let todosVolumesGerais = [];
+    normasBlocos.forEach(n => { todosVolumesGerais = todosVolumesGerais.concat(n.volumes); });
+
+    const produtoData = {
+      codigo: document.getElementById('prod-codigo').value,
+      descricao: document.getElementById('prod-descricao').value,
+      grade: document.getElementById('prod-grade').value,
+      fornecedor: document.getElementById('prod-fornecedor').value,
+      normasPaletizacao: normasBlocos,
+      volumes: todosVolumesGerais
+    };
+
+    const id = document.getElementById('prod-id').value;
+    if (id) {
+      await updateDoc(doc(db, "produtos", id), produtoData);
+      alert("Produto atualizado com sucesso!");
+    } else {
+      await addDoc(collection(db, "produtos"), produtoData);
+      alert("Produto cadastrado com sucesso!");
+    }
+
+    resetFormProduto();
+    carregarProdutos();
   });
-
-  if (normasBlocos.length === 0) return alert("Adicione pelo menos uma norma!");
-
-  let todosVolumesGerais = [];
-  normasBlocos.forEach(n => { todosVolumesGerais = todosVolumesGerais.concat(n.volumes); });
-
-  const produtoData = {
-    codigo: document.getElementById('prod-codigo').value,
-    descricao: document.getElementById('prod-descricao').value,
-    grade: document.getElementById('prod-grade').value,
-    fornecedor: document.getElementById('prod-fornecedor').value,
-    normasPaletizacao: normasBlocos,
-    volumes: todosVolumesGerais
-  };
-
-  const id = document.getElementById('prod-id').value;
-  if (id) {
-    await updateDoc(doc(db, "produtos", id), produtoData);
-    alert("Produto atualizado com sucesso!");
-  } else {
-    await addDoc(collection(db, "produtos"), produtoData);
-    alert("Produto cadastrado com sucesso!");
-  }
-
-  resetFormProduto();
-  carregarProdutos();
-});
+}
 
 window.resetFormProduto = function() {
-  document.getElementById('form-produto').reset();
+  const form = document.getElementById('form-produto');
+  if (form) form.reset();
   document.getElementById('prod-id').value = '';
   document.getElementById('normas-container').innerHTML = '';
   normaCount = 0;
@@ -163,24 +171,30 @@ window.resetFormProduto = function() {
 
 async function carregarProdutos() {
   const tbody = document.getElementById('lista-produtos');
+  if (!tbody) return;
+  
   tbody.innerHTML = '';
-  const querySnapshot = await getDocs(collection(db, "produtos"));
-  querySnapshot.forEach((docSnap) => {
-    const p = docSnap.data();
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${p.codigo}</td>
-      <td>${p.descricao}</td>
-      <td>${p.grade || '-'}</td>
-      <td>${p.fornecedor}</td>
-      <td>${p.normasPaletizacao ? p.normasPaletizacao.length : 0} norma(s) | ${p.volumes ? p.volumes.length : 0} vol(s)</td>
-      <td>
-        <button class="btn-secondary" onclick="editarProduto('${docSnap.id}')">Editar</button>
-        <button class="btn-remove" style="padding:0 8px" onclick="deletarProduto('${docSnap.id}')">Excluir</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
+  try {
+    const querySnapshot = await getDocs(collection(db, "produtos"));
+    querySnapshot.forEach((docSnap) => {
+      const p = docSnap.data();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${p.codigo}</td>
+        <td>${p.descricao}</td>
+        <td>${p.grade || '-'}</td>
+        <td>${p.fornecedor}</td>
+        <td>${p.normasPaletizacao ? p.normasPaletizacao.length : 0} norma(s) | ${p.volumes ? p.volumes.length : 0} vol(s)</td>
+        <td>
+          <button class="btn-secondary" onclick="editarProduto('${docSnap.id}')">Editar</button>
+          <button class="btn-remove" style="padding:0 8px" onclick="deletarProduto('${docSnap.id}')">Excluir</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (error) {
+    console.error("Erro ao carregar produtos:", error);
+  }
 }
 
 window.editarProduto = async function(id) {
@@ -211,5 +225,6 @@ window.deletarProduto = async function(id) {
   }
 };
 
+// Executa assim que o script é carregado na página
 carregarProdutos();
 adicionarNormaBloco();
