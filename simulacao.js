@@ -14,7 +14,7 @@ async function carregarSelectsSimulacao() {
     selVeic.innerHTML = '';
     const veics = await getDocs(collection(db, "veiculos"));
     veics.forEach(d => {
-      selVeic.innerHTML += `<option value="${d.id}">[${d.data().tipo}] ${d.data().nome}</option>`;
+      selVeic.innerHTML += `<option value="${d.id}">[${d.data().tipo}] ${d.data().nome} (${d.data().comprimento}m C x ${d.data().largura}m L)</option>`;
     });
   }
 
@@ -80,46 +80,55 @@ window.executarSimulacaoMultipla = async function() {
     const prodObj = produtosDisponiveisCache.find(p => p.id === prodId);
     if (!prodObj) continue;
 
-    const pesoUmJogo = prodObj.volumes.reduce((acc, v) => acc + v.peso, 0);
+    const volumesDoJogo = prodObj.volumes || [];
+    if (volumesDoJogo.length === 0) {
+      alert(`O produto ${prodObj.codigo} não possui volumes cadastrados!`);
+      return;
+    }
+
+    // Calcula o peso e cubagem real de 1 jogo completo
+    let pesoUmJogo = 0;
+    volumesDoJogo.forEach(v => {
+      pesoUmJogo += parseFloat(v.peso) || 0;
+    });
+
     const pesoTotalProd = pesoUmJogo * qtdJogos;
-    
-    // Pega a primeira norma cadastrada do produto para cálculo de palete padrão
+    totalJogosGeral += qtdJogos;
+    pesoTotalCargaGeral += pesoTotalProd;
+
     const normaRef = prodObj.normasPaletizacao && prodObj.normasPaletizacao.length > 0 ? prodObj.normasPaletizacao[0] : { unificador: 'PALETE 1.60 X 1.60', jogosPorPalete: 10 };
     const jogosPorPaleteNorma = normaRef.jogosPorPalete || 10;
-    
     const paletesCompletos = Math.floor(qtdJogos / jogosPorPaleteNorma);
     const jogosRestantes = qtdJogos % jogosPorPaleteNorma;
     const totalPaletesNecessarios = paletesCompletos + (jogosRestantes > 0 ? 1 : 0);
 
-    pesoTotalCargaGeral += pesoTotalProd;
-    totalJogosGeral += qtdJogos;
-
     resumoPaletesHtml += `
       <div style="margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px;">
         <strong>${prodObj.codigo} - ${prodObj.descricao} (Grade: ${prodObj.grade || 'Padrão'})</strong><br>
-        • Solicitado: <strong>${qtdJogos} Jogos</strong> (${prodObj.volumes.length} volumes cada)<br>
-        • Norma WMS: <strong>${normaRef.unificador}</strong> (${jogosPorPaleteNorma} jogos/palete)<br>
-        • <strong>Desmembramento Inteligente:</strong> ${paletesCompletos} palete(s) fechado(s) + ${jogosRestantes > 0 ? `1 palete fracionado/sobra com ${jogosRestantes} jogos` : 'Nenhum fracionado'}. (Total: <strong>${totalPaletesNecessarios} Paletes</strong>)
+        • Solicitado: <strong>${qtdJogos} Jogo(s)</strong> | Cada jogo é composto por <strong>${volumesDoJogo.length} volumes indivisíveis</strong>.<br>
+        • Norma WMS Destino: <strong>${normaRef.unificador}</strong> (${jogosPorPaleteNorma} jogos/palete)<br>
+        • <strong>Desmembramento:</strong> ${paletesCompletos} palete(s) fechado(s) + ${jogosRestantes > 0 ? `1 fracionado com ${jogosRestantes} jogos` : 'Nenhum fracionado'}. (Total: <strong>${totalPaletesNecessarios} Paletes</strong>)
       </div>
     `;
 
-    itensSimulacao.push({ produto: prodObj, qtdJogos, normaRef });
+    itensSimulacao.push({ produto: prodObj, qtdJogos, volumesDoJogo, normaRef });
   }
 
-  if (itensSimulacao.length === 0) return alert("Selecione produtos válidos e informe quantidades maiores que zero!");
+  if (itensSimulacao.length === 0) return alert("Selecione produtos válidos!");
 
   document.getElementById('relatorio-impressao').classList.remove('hidden');
 
   document.getElementById('sim-resumo').innerHTML = `
-    <strong>Veículo Selecionado:</strong> ${veiculo.nome} (${veiculo.tipo}) - Cáp: ${veiculo.comprimento}m C x ${veiculo.largura}m L x ${veiculo.altura}m A<br>
-    <strong>Total de Jogos na Carga:</strong> ${totalJogosGeral} Jogos | <strong>Peso Total Estimado:</strong> ${pesoTotalCargaGeral.toFixed(1)} kg
+    <strong>Veículo Selecionado:</strong> ${veiculo.nome} (${veiculo.tipo})<br>
+    • Dimensões Úteis da Carroceria: <strong>Comprimento: ${veiculo.comprimento}m | Largura: ${veiculo.largura}m | Altura: ${veiculo.altura}m</strong><br>
+    • Total de Jogos na Carga: <strong>${totalJogosGeral} Jogos</strong> | Peso Estimado: <strong>${pesoTotalCargaGeral.toFixed(1)} kg</strong>
   `;
 
   document.getElementById('sim-paletes-desmembramento').innerHTML = resumoPaletesHtml;
 
   desenharPalete(itensSimulacao[0].normaRef);
-  desenharCargaMultipla(itensSimulacao, veiculo);
-  gerarInstrucoesTextoMultipla(itensSimulacao, veiculo);
+  desenharCargaRealPorBlocos(itensSimulacao, veiculo);
+  gerarInstrucoesTextoReal(itensSimulacao, veiculo);
 };
 
 function desenharPalete(norma) {
@@ -157,7 +166,8 @@ function desenharPalete(norma) {
   ctx.fillText(`Norma: ${norma.unificador} | ${norma.jogosPorPalete} jogos/palete`, 60, 25);
 }
 
-function desenharCargaMultipla(itens, veiculo) {
+// MOTOR DE DESENHO INTELIGENTE: Respeita dimensões do veículo e mantém blocos de jogo unidos
+function desenharCargaRealPorBlocos(itens, veiculo) {
   const cvTop = document.getElementById('canvas-carga-top');
   const ctxT = cvTop.getContext('2d');
   const cvSide = document.getElementById('canvas-carga-side');
@@ -169,82 +179,118 @@ function desenharCargaMultipla(itens, veiculo) {
   const isSider = veiculo.tipo === "Sider";
   
   document.getElementById('desc-estrategia').innerHTML = isSider
-    ? `<strong>Estratégia Sider:</strong> Blocos de jogos dispostos ao longo da lateral para acesso rápido por lona.`
-    : `<strong>Estratégia Baú:</strong> Carga organizada do fundo para a porta traseira em fileiras sequenciais.`;
+    ? `<strong>Estratégia Sider (${veiculo.comprimento}m de Comprimento):</strong> Os kits completos (com todos os volumes unidos em blocos sequenciais) são dispostos ao longo da lateral. A abertura da lona permite retirar o jogo inteiro sem fragmentação.`
+    : `<strong>Estratégia Baú (${veiculo.comprimento}m de Comprimento):</strong> Os kits são organizados do <strong>fundo para a porta traseira</strong>. Cada jogo mantém seus volumes juntos, permitindo a descarga sequencial pelo fundo do baú.`;
 
+  // Desenho da Carroceria proporcional ao comprimento real cadastrado
   [ctxT, ctxS].forEach(ctx => {
-    ctx.fillStyle = "#e2e8f0";
-    ctx.fillRect(40, 30, 670, 140);
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(40, 25, 680, 150);
     ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(40, 30, 670, 140);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(40, 25, 680, 150);
 
-    ctx.fillStyle = "#94a3b8";
-    ctx.fillRect(10, 30, 30, 140);
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "10px sans-serif";
-    ctx.fillText("CAB", 13, 100);
+    // Cabine
+    ctx.fillStyle = "#64748b";
+    ctx.fillRect(5, 25, 35, 150);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 10px sans-serif";
+    ctx.fillText("CAB", 10, 105);
   });
 
   if (isSider) {
     ctxT.fillStyle = "#ef4444";
     ctxT.font = "bold 11px sans-serif";
-    ctxT.fillText("⬇ DESCARGA LATERAL (ABERTURA DE LONA) ⬇", 220, 20);
+    ctxT.fillText(`⬇ ABERTURA LATERAL - LONA SIDER (${veiculo.comprimento}m Úteis) ⬇`, 180, 18);
   } else {
     ctxT.fillStyle = "#ef4444";
     ctxT.font = "bold 11px sans-serif";
-    ctxT.fillText("PORTA TRASEIRA (INÍCIO DA DESCARGA) ➡", 470, 20);
+    ctxT.fillText(`PORTA TRASEIRA DO BAÚ (${veiculo.comprimento}m Úteis) ➡`, 440, 18);
   }
 
   let totalJogosGeral = itens.reduce((acc, item) => acc + item.qtdJogos, 0);
-  let colunasMaximas = Math.min(totalJogosGeral, 15);
-  let larguraBloco = 650 / colunasMaximas;
+  let maxColunasVisual = Math.min(Math.max(totalJogosGeral, 5), 16);
+  let larguraDisponivel = 660;
   let cursorX = 0;
 
-  itens.forEach((item, indexColor) => {
-    const cores = ["#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ec4899"];
-    const corAtual = cores[indexColor % cores.length];
+  itens.forEach((item, indexProduto) => {
+    const coresGrad = ["#0284c7", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
+    const corBase = coresGrad[indexProduto % coresGrad.length];
+    const gradeNome = item.produto.grade ? ` - ${item.produto.grade}` : '';
+    const volumesDoJogo = item.volumesDoJogo;
 
-    for (let j = 0; j < item.qtdJogos; j++) {
-      if (cursorX >= colunasMaximas) break;
-      const x = 45 + (cursorX * larguraBloco);
+    for (let jogoIdx = 0; jogoIdx < item.qtdJogos; jogoIdx++) {
+      if (cursorX >= maxColunasVisual) break;
+      const blocoX = 45 + (cursorX * (larguraDisponivel / maxColunasVisual));
+      const larguraBloco = (larguraDisponivel / maxColunasVisual) - 3;
 
-      ctxT.fillStyle = corAtual;
-      ctxT.fillRect(x + 1, 35, larguraBloco - 2, 130);
-      ctxT.strokeStyle = "#1e293b";
-      ctxT.strokeRect(x + 1, 35, larguraBloco - 2, 130);
+      // Bloco Superior (Planta Baixa - Cada Jogo é um bloco fechado e unido)
+      ctxT.fillStyle = corBase;
+      ctxT.fillRect(blocoX, 30, larguraBloco, 140);
+      ctxT.strokeStyle = "#0f172a";
+      ctxT.lineWidth = 1.5;
+      ctxT.strokeRect(blocoX, 30, larguraBloco, 140);
 
-      ctxS.fillStyle = corAtual;
-      ctxS.fillRect(x + 1, 35, larguraBloco - 2, 130);
-      ctxS.strokeStyle = "#1e293b";
-      ctxS.strokeRect(x + 1, 35, larguraBloco - 2, 130);
+      ctxT.fillStyle = "#ffffff";
+      ctxT.font = "bold 9px sans-serif";
+      ctxT.fillText(`J${jogoIdx+1}: ${item.produto.codigo}${gradeNome}`, blocoX + 3, 44);
+
+      // Listagem dos volumes dentro do bloco do jogo (Garante visualmente que estão juntos)
+      let alturaVol = 120 / volumesDoJogo.length;
+      volumesDoJogo.forEach((vol, vIdx) => {
+        let volY = 48 + (vIdx * alturaVol);
+        ctxT.strokeStyle = "rgba(255,255,255,0.6)";
+        ctxT.strokeRect(blocoX + 2, volY, larguraBloco - 4, alturaVol - 2);
+        
+        ctxT.fillStyle = "#ffffff";
+        ctxT.font = "8px sans-serif";
+        ctxT.fillText(`${vol.numero} (${vol.descricao.substring(0, 10)})`, blocoX + 4, volY + (alturaVol / 2) + 3);
+      });
+
+      // Vista Lateral (Elevação)
+      ctxS.fillStyle = corBase;
+      ctxS.fillRect(blocoX, 30, larguraBloco, 140);
+      ctxS.strokeStyle = "#0f172a";
+      ctxS.strokeRect(blocoX, 30, larguraBloco, 140);
+
+      ctxS.fillStyle = "#ffffff";
+      ctxS.font = "bold 9px sans-serif";
+      ctxS.fillText(`Jogo ${jogoIdx+1}`, blocoX + 3, 60);
+      ctxS.font = "8px sans-serif";
+      ctxS.fillText(`${item.produto.codigo}${gradeNome}`, blocoX + 3, 75);
 
       cursorX++;
     }
   });
 }
 
-function gerarInstrucoesTextoMultipla(itens, veiculo) {
+function gerarInstrucoesTextoReal(itens, veiculo) {
   const isSider = veiculo.tipo === "Sider";
   const container = document.getElementById('sim-instrucoes');
 
   let html = `
-    <h4>REGRAS OBRIGATÓRIAS DE CARREGAMENTO E SEPARAÇÃO DE GRADES:</h4>
+    <h4>INSTRUÇÕES DE CARREGAMENTO INTELIGENTE (BLOCOS UNIFICADOS):</h4>
     <ul>
-      <li><strong>SEPARAÇÃO RIGOROSA POR GRADE E CÓDIGO:</strong> Proibido misturar volumes de códigos ou variações diferentes no mesmo bloco.</li>
-      <li><strong>INTEGRIDADE DOS VOLUMES:</strong> Cada jogo deve manter todos os seus volumes reunidos conforme norma do WMS.</li>
+      <li><strong>INTEGRIDADE DO JOGO (BLOCO ÚNICO):</strong> É terminantemente proibido separar os volumes de um mesmo jogo. O conjunto completo (${item => item} volumes) deve ser acomodado lado a lado na carroceria, garantindo que o operador recolha o jogo inteiro de uma só vez.</li>
+      <li><strong>RESPEITO ÀS DIMENSÕES DA CARROCERIA:</strong> Veículo ${veiculo.nome} (${veiculo.comprimento}m C x ${veiculo.largura}m L). Os volumes pesados e estruturais devem ir na base, enquanto volumes menores (como pés e fundos) e espelhos devem ser travados no miolo do respectivo bloco.</li>
   `;
 
   itens.forEach(item => {
     html += `
-      <li><strong>Produto ${item.produto.codigo} - ${item.produto.descricao} (Grade: ${item.produto.grade || 'N/A'}):</strong>
+      <li><strong>Produto ${item.produto.codigo} - ${item.produto.descricao} (Grade: ${item.produto.grade || 'Padrão'}):</strong>
         <ul>
-          <li>Quantidade solicitada: ${item.qtdJogos} jogos (${item.produto.volumes.length} volumes por jogo).</li>
-          <li>Norma WMS associada: ${item.normaRef.unificador}</li>
+          <li>Qtd Solicitada: ${item.qtdJogos} Jogos | Composição de cada jogo: <strong>${item.volumesDoJogo.map(v => `${v.numero} (${v.descricao})`).join(' + ')}</strong>.</li>
+          <li>Norma de Paletização no Destino: ${item.normaRef.unificador} (${item.normaRef.jogosPorPalete} jogos/palete).</li>
         </ul>
       </li>
     `;
   });
+
+  if (isSider) {
+    html += `<li><strong>Operação Sider:</strong> Alinhar os blocos completos longitudinalmente para descarga lateral limpa pela lona.</li>`;
+  } else {
+    html += `<li><strong>Operação Baú:</strong> Posicionar do fundo para a porta traseira, mantendo a sequência exata de entrega.</li>`;
+  }
 
   html += `</ul>`;
   container.innerHTML = html;
