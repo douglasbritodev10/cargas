@@ -54,17 +54,9 @@ nav {
 }
 
 .container {
-  max-width: 1100px;
+  max-width: 1250px;
   margin: 20px auto;
   padding: 0 15px;
-}
-
-.tab-content {
-  display: none;
-}
-
-.tab-content.active {
-  display: block;
 }
 
 .card {
@@ -91,7 +83,7 @@ nav {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
 }
 
@@ -173,16 +165,6 @@ input:focus, select:focus {
   gap: 10px;
 }
 
-.info-banner {
-  background-color: #e0f2fe;
-  color: #0369a1;
-  padding: 10px;
-  border-radius: 5px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-top: 12px;
-}
-
 .table-responsive {
   overflow-x: auto;
 }
@@ -215,39 +197,33 @@ th {
   margin-bottom: 8px;
 }
 
-.canvas-wrapper {
+/* Modal e Docks de Montagem */
+.vol-card-dock {
   background: #f8fafc;
   border: 1px solid #cbd5e1;
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 15px;
-  text-align: center;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  cursor: grab;
+  font-size: 0.8rem;
 }
 
-canvas {
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  max-width: 100%;
-  height: auto;
-  border-radius: 4px;
-  margin-top: 5px;
+.vol-card-dock:hover {
+  border-color: #0284c7;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
-.resumo-box, .instrucoes-box {
-  background: #f1f5f9;
-  border-left: 4px solid #0284c7;
-  padding: 12px;
-  border-radius: 4px;
-  margin-bottom: 15px;
-  font-size: 0.9rem;
-  line-height: 1.5;
+.weight-indicator {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 0.85rem;
 }
 
-.instrucoes-box ul {
-  padding-left: 20px;
-}
+.weight-ok { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.weight-warn { background: #fef9c3; color: #a16207; border: 1px solid #fef08a; }
+.weight-alert { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
 
-/* Responsividade Mobile */
 @media (max-width: 768px) {
   .volume-row {
     grid-template-columns: 1fr 1fr;

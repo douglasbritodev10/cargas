@@ -32,11 +32,11 @@ window.adicionarNormaBloco = function(normaData = {}) {
   div.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
       <h4 style="color: #0284c7; font-size: 0.9rem;">📦 Bloco de Norma de Paletização</h4>
-      <button type="button" class="btn-remove" onclick="document.getElementById('${normaId}').remove()" style="padding: 2px 8px; height: 26px; font-size: 0.75rem;">Excluir Norma</button>
+      <button type="button" class="btn-remove" onclick="document.getElementById('${normaId}').remove()" style="padding: 2px 8px; height: 26px; font-size: 0.75rem;">Excluir</button>
     </div>
     <div class="form-grid">
       <div class="field">
-        <label>Unifizador</label>
+        <label>Unificador</label>
         <select class="norma-unificador" required>${optionsUnificador}</select>
       </div>
       <div class="field">
@@ -62,7 +62,7 @@ window.adicionarNormaBloco = function(normaData = {}) {
 
     <h5 style="margin: 15px 0 5px 0; font-size: 0.85rem; color: #334155;">Volumes pertencentes a esta Norma:</h5>
     <div id="${volumesContainerId}"></div>
-    <button type="button" class="btn-secondary" onclick="addVolumeEmNorma('${volumesContainerId}')" style="margin-top: 8px; font-size: 0.75rem; padding: 4px 10px;">+ Adicionar Volume nesta Norma</button>
+    <button type="button" class="btn-secondary" onclick="addVolumeEmNorma('${volumesContainerId}')" style="margin-top: 8px; font-size: 0.75rem; padding: 4px 10px;">+ Adicionar Volume</button>
   `;
 
   container.appendChild(div);
@@ -123,12 +123,7 @@ if (formProduto) {
       });
 
       normasBlocos.push({
-        unificador,
-        padrao,
-        lastro,
-        camadas,
-        jogosPorPalete,
-        volumes: volumesDesteBloco
+        unificador, padrao, lastro, camadas, jogosPorPalete, volumes: volumesDesteBloco
       });
     });
 
@@ -225,6 +220,5 @@ window.deletarProduto = async function(id) {
   }
 };
 
-// Executa assim que o script é carregado na página
 carregarProdutos();
 adicionarNormaBloco();

@@ -3,40 +3,45 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LogiPalete - Cadastro de Veículos</title>
+  <title>LogiPalete - Veículos & API</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <header class="navbar">
-    <h1>LogiPalete <span>| Veículos Padrão</span></h1>
+    <h1>LogiPalete <span>| Frota & API de Veículos</span></h1>
     <nav>
-      <button class="nav-btn" onclick="location.href='produtos.html'">Produtos & Normas</button>
-      <button class="nav-btn active" onclick="location.href='veiculos.html'">Veículos Padrão</button>
-      <button class="nav-btn" onclick="location.href='simulacao.html'">Simulação & Carregamento</button>
+      <button class="nav-btn" onclick="location.href='index.html'">Produtos & Normas</button>
+      <button class="nav-btn active" onclick="location.href='veiculos.html'">Veículos & API</button>
+      <button class="nav-btn" onclick="location.href='simulacao.html'">Simulação & Montagem 3D</button>
     </nav>
   </header>
 
   <main class="container">
     <section class="card">
-      <h2>Cadastrar Veículo Padrão para Transporte</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h2>Cadastrar ou Importar Veículo Padrão</h2>
+        <button class="btn-secondary" onclick="carregarVeiculosDaAPI()" style="background: #0284c7; color: white;">🌐 Importar Todos Veículos (API Externa)</button>
+      </div>
+
       <form id="form-veiculo">
         <input type="hidden" id="veic-id">
         <div class="form-grid">
           <div class="field">
-            <label>Tipo de Veículo</label>
+            <label>Tipo de Carroceria</label>
             <select id="veic-tipo" required>
-              <option value="Sider">Carreta Sider (Descarga Lateral)</option>
-              <option value="Bau">Caminhão / Carreta Baú (Descarga Fundo)</option>
+              <option value="Sider">Carreta / Caminhão Sider (Lateral)</option>
+              <option value="Bau">Caminhão / Carreta Baú Fechado</option>
+              <option value="Graneleiro">Caminhão / Carreta Graneleiro</option>
             </select>
           </div>
           <div class="field">
-            <label>Nome / Identificação</label>
-            <input type="text" id="veic-nome" placeholder="Ex.: Sider 14,60m Padrão" required>
+            <label>Modelo / Configuração</label>
+            <input type="text" id="veic-nome" placeholder="Ex.: Carreta LS 3 Eixos 14.60m" required>
           </div>
           <div class="field">
             <label>Comprimento Útil (m)</label>
-            <input type="number" step="0.01" id="veic-comprimento" placeholder="14.6" required>
+            <input type="number" step="0.01" id="veic-comprimento" placeholder="14.60" required>
           </div>
           <div class="field">
             <label>Largura Útil (m)</label>
@@ -48,17 +53,17 @@
           </div>
         </div>
         <div class="form-actions" style="margin-top: 15px;">
-          <button type="submit" class="btn-primary">Salvar Veículo</button>
+          <button type="submit" class="btn-primary">Salvar no Firebase</button>
         </div>
       </form>
 
-      <h3 style="margin-top: 30px;">Veículos Cadastrados</h3>
+      <h3 style="margin-top: 30px;">Veículos Disponíveis no Banco</h3>
       <div class="table-responsive">
         <table>
           <thead>
             <tr>
               <th>Tipo</th>
-              <th>Nome</th>
+              <th>Modelo / Nome</th>
               <th>Dimensões (C x L x A)</th>
               <th>Ações</th>
             </tr>

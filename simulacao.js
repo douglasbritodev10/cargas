@@ -1,6 +1,11 @@
 import { db, collection, getDocs, doc, getDoc } from './firebase.js';
 
 let produtosDisponiveisCache = [];
+let volumesDisponiveisPatio = [];
+let volumesNoCaminhao = [];
+let veiculoSelecionado = null;
+
+let scene, camera, renderer, vehicleMesh;
 
 async function carregarSelectsSimulacao() {
   const prodsSnap = await getDocs(collection(db, "produtos"));
@@ -34,10 +39,10 @@ window.adicionarLinhaSimulacao = function() {
   div.style.marginBottom = '10px';
   div.id = linhaId;
 
-  let optionsHtml = '<option value="">Selecione o Produto (Código - Descrição / Grade)</option>';
+  let optionsHtml = '<option value="">Selecione o Produto (Código - Descrição)</option>';
   produtosDisponiveisCache.forEach(p => {
-    const gradeStr = p.grade ? ` | Grade: ${p.grade}` : ' | Sem Grade';
-    optionsHtml += `<option value="${p.id}">${p.codigo} - ${p.descricao} ${gradeStr} (Fornecedor: ${p.fornecedor})</option>`;
+    const gradeStr = p.grade ? ` | Grade: ${p.grade}` : '';
+    optionsHtml += `<option value="${p.id}">${p.codigo} - ${p.descricao}${gradeStr}</option>`;
   });
 
   div.innerHTML = `
@@ -47,7 +52,7 @@ window.adicionarLinhaSimulacao = function() {
     </div>
     <div class="field">
       <label>Qtd de Jogos (Kits)</label>
-      <input type="number" class="sim-prod-qtd" value="10" min="1" required>
+      <input type="number" class="sim-prod-qtd" value="5" min="1" required>
     </div>
     <div class="field" style="display: flex; align-items: flex-end;">
       <button type="button" class="btn-remove" onclick="document.getElementById('${linhaId}').remove()">Remover</button>
@@ -58,19 +63,20 @@ window.adicionarLinhaSimulacao = function() {
 
 window.executarSimulacaoMultipla = async function() {
   const linhas = document.querySelectorAll('#simulacao-produtos-container > div');
-  if (linhas.length === 0) return alert("Adicione pelo menos um produto à simulação!");
+  if (linhas.length === 0) return alert("Adicione produtos à simulação!");
 
   const veicId = document.getElementById('sim-veiculo').value;
   if (!veicId) return alert("Selecione um veículo!");
 
   const veicSnap = await getDoc(doc(db, "veiculos", veicId));
-  const veiculo = veicSnap.data();
+  veiculoSelecionado = veicSnap.data();
 
-  let itensSimulacao = [];
-  let pesoTotalCargaGeral = 0;
-  let totalJogosGeral = 0;
+  volumesDisponiveisPatio = [];
+  volumesNoCaminhao = [];
   let resumoPaletesHtml = "";
+  const CORES_PALETA = ["#0284c7", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"];
 
+  let prodIndex = 0;
   for (let linha of linhas) {
     const prodId = linha.querySelector('.sim-prod-select').value;
     const qtdJogos = parseInt(linha.querySelector('.sim-prod-qtd').value) || 0;
@@ -80,251 +86,178 @@ window.executarSimulacaoMultipla = async function() {
     const prodObj = produtosDisponiveisCache.find(p => p.id === prodId);
     if (!prodObj) continue;
 
-    const volumesDoJogo = prodObj.volumes || [];
-    if (volumesDoJogo.length === 0) {
-      alert(`O produto ${prodObj.codigo} não possui volumes cadastrados!`);
-      return;
-    }
-
-    // Calcula o peso e cubagem real de 1 jogo completo
-    let pesoUmJogo = 0;
-    volumesDoJogo.forEach(v => {
-      pesoUmJogo += parseFloat(v.peso) || 0;
-    });
-
-    const pesoTotalProd = pesoUmJogo * qtdJogos;
-    totalJogosGeral += qtdJogos;
-    pesoTotalCargaGeral += pesoTotalProd;
+    const corProduto = CORES_PALETA[prodIndex % CORES_PALETA.length];
+    prodIndex++;
 
     const normaRef = prodObj.normasPaletizacao && prodObj.normasPaletizacao.length > 0 ? prodObj.normasPaletizacao[0] : { unificador: 'PALETE 1.60 X 1.60', jogosPorPalete: 10 };
-    const jogosPorPaleteNorma = normaRef.jogosPorPalete || 10;
-    const paletesCompletos = Math.floor(qtdJogos / jogosPorPaleteNorma);
-    const jogosRestantes = qtdJogos % jogosPorPaleteNorma;
-    const totalPaletesNecessarios = paletesCompletos + (jogosRestantes > 0 ? 1 : 0);
+    const jogosPorPalete = normaRef.jogosPorPalete || 10;
+    const paletesFechados = Math.floor(qtdJogos / jogosPorPalete);
+    const sobra = qtdJogos % jogosPorPalete;
 
     resumoPaletesHtml += `
-      <div style="margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px;">
-        <strong>${prodObj.codigo} - ${prodObj.descricao} (Grade: ${prodObj.grade || 'Padrão'})</strong><br>
-        • Solicitado: <strong>${qtdJogos} Jogo(s)</strong> | Cada jogo é composto por <strong>${volumesDoJogo.length} volumes indivisíveis</strong>.<br>
-        • Norma WMS Destino: <strong>${normaRef.unificador}</strong> (${jogosPorPaleteNorma} jogos/palete)<br>
-        • <strong>Desmembramento:</strong> ${paletesCompletos} palete(s) fechado(s) + ${jogosRestantes > 0 ? `1 fracionado com ${jogosRestantes} jogos` : 'Nenhum fracionado'}. (Total: <strong>${totalPaletesNecessarios} Paletes</strong>)
+      <div style="margin-bottom:8px; border-bottom:1px dashed #cbd5e1; padding-bottom:6px;">
+        <strong>${prodObj.codigo} - ${prodObj.descricao}</strong> (${qtdJogos} jogos)<br>
+        • Desmembramento Destino (${normaRef.unificador}): ${paletesFechados} paletes fechados + ${sobra > 0 ? `1 palete com ${sobra} jogos` : '0 sobra'}.
       </div>
     `;
 
-    itensSimulacao.push({ produto: prodObj, qtdJogos, volumesDoJogo, normaRef });
+    // Desmembra jogos e cria cada volume com cor e dimensões
+    for (let j = 1; j <= qtdJogos; j++) {
+      (prodObj.volumes || []).forEach(v => {
+        volumesDisponiveisPatio.push({
+          id: `vol-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          prodCodigo: prodObj.codigo,
+          jogoNum: j,
+          volNumero: v.numero,
+          descricao: v.descricao,
+          largura: parseFloat(v.largura) || 0.5,
+          altura: parseFloat(v.altura) || 0.5,
+          prof: parseFloat(v.prof) || 0.5,
+          peso: parseFloat(v.peso) || 10,
+          cor: corProduto
+        });
+      });
+    }
   }
 
-  if (itensSimulacao.length === 0) return alert("Selecione produtos válidos!");
-
-  document.getElementById('relatorio-impressao').classList.remove('hidden');
-
+  document.getElementById('area-simulacao').classList.remove('hidden');
   document.getElementById('sim-resumo').innerHTML = `
-    <strong>Veículo Selecionado:</strong> ${veiculo.nome} (${veiculo.tipo})<br>
-    • Dimensões Úteis da Carroceria: <strong>Comprimento: ${veiculo.comprimento}m | Largura: ${veiculo.largura}m | Altura: ${veiculo.altura}m</strong><br>
-    • Total de Jogos na Carga: <strong>${totalJogosGeral} Jogos</strong> | Peso Estimado: <strong>${pesoTotalCargaGeral.toFixed(1)} kg</strong>
+    <strong>Veículo:</strong> ${veiculoSelecionado.nome} (${veiculoSelecionado.tipo}) | Dimensões Úteis: ${veiculoSelecionado.comprimento}m C x ${veiculoSelecionado.largura}m L x ${veiculoSelecionado.altura}m A
   `;
-
   document.getElementById('sim-paletes-desmembramento').innerHTML = resumoPaletesHtml;
 
-  desenharPalete(itensSimulacao[0].normaRef);
-  desenharCargaRealPorBlocos(itensSimulacao, veiculo);
-  gerarInstrucoesTextoReal(itensSimulacao, veiculo);
+  renderizarPatio();
+  inicializarCenario3D();
 };
 
-function desenharPalete(norma) {
-  const canvas = document.getElementById('canvas-palete');
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+function renderizarPatio() {
+  const container = document.getElementById('dock-patio-volumes');
+  container.innerHTML = '';
 
-  ctx.fillStyle = "#f8fafc";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "#b45309";
-  ctx.fillRect(100, 240, 200, 20);
-  ctx.fillStyle = "#78350f";
-  ctx.fillRect(120, 260, 30, 15);
-  ctx.fillRect(185, 260, 30, 15);
-  ctx.fillRect(250, 260, 30, 15);
-
-  const camadas = norma.camadas || 4;
-  const alturaCaixa = 180 / camadas;
-
-  for (let i = 0; i < camadas; i++) {
-    const y = 240 - ((i + 1) * alturaCaixa);
-    ctx.fillStyle = (i % 2 === 0) ? "#3b82f6" : "#60a5fa";
-    ctx.fillRect(105, y, 190, alturaCaixa - 2);
-    ctx.strokeStyle = "#1d4ed8";
-    ctx.strokeRect(105, y, 190, alturaCaixa - 2);
-    
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "11px sans-serif";
-    ctx.fillText(`Camada ${i + 1}`, 170, y + (alturaCaixa / 2) + 4);
-  }
-
-  ctx.fillStyle = "#0f172a";
-  ctx.font = "bold 12px sans-serif";
-  ctx.fillText(`Norma: ${norma.unificador} | ${norma.jogosPorPalete} jogos/palete`, 60, 25);
-}
-
-// MOTOR DE DESENHO INTELIGENTE: Respeita dimensões do veículo e mantém blocos de jogo unidos
-function desenharCargaRealPorBlocos(itens, veiculo) {
-  const cvTop = document.getElementById('canvas-carga-top');
-  const ctxT = cvTop.getContext('2d');
-  const cvSide = document.getElementById('canvas-carga-side');
-  const ctxS = cvSide.getContext('2d');
-
-  ctxT.clearRect(0, 0, cvTop.width, cvTop.height);
-  ctxS.clearRect(0, 0, cvSide.width, cvSide.height);
-
-  const isSider = veiculo.tipo === "Sider";
-  
-  document.getElementById('desc-estrategia').innerHTML = isSider
-    ? `<strong>Estratégia Sider (${veiculo.comprimento}m de Comprimento):</strong> Os kits completos (com todos os volumes unidos em blocos sequenciais) são dispostos ao longo da lateral. A abertura da lona permite retirar o jogo inteiro sem fragmentação.`
-    : `<strong>Estratégia Baú (${veiculo.comprimento}m de Comprimento):</strong> Os kits são organizados do <strong>fundo para a porta traseira</strong>. Cada jogo mantém seus volumes juntos, permitindo a descarga sequencial pelo fundo do baú.`;
-
-  // Desenho da Carroceria proporcional ao comprimento real cadastrado
-  [ctxT, ctxS].forEach(ctx => {
-    ctx.fillStyle = "#f8fafc";
-    ctx.fillRect(40, 25, 680, 150);
-    ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(40, 25, 680, 150);
-
-    // Cabine
-    ctx.fillStyle = "#64748b";
-    ctx.fillRect(5, 25, 35, 150);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 10px sans-serif";
-    ctx.fillText("CAB", 10, 105);
-  });
-
-  if (isSider) {
-    ctxT.fillStyle = "#ef4444";
-    ctxT.font = "bold 11px sans-serif";
-    ctxT.fillText(`⬇ ABERTURA LATERAL - LONA SIDER (${veiculo.comprimento}m Úteis) ⬇`, 180, 18);
-  } else {
-    ctxT.fillStyle = "#ef4444";
-    ctxT.font = "bold 11px sans-serif";
-    ctxT.fillText(`PORTA TRASEIRA DO BAÚ (${veiculo.comprimento}m Úteis) ➡`, 440, 18);
-  }
-
-  let totalJogosGeral = itens.reduce((acc, item) => acc + item.qtdJogos, 0);
-  let maxColunasVisual = Math.min(Math.max(totalJogosGeral, 5), 16);
-  let larguraDisponivel = 660;
-  let cursorX = 0;
-
-  itens.forEach((item, indexProduto) => {
-    const coresGrad = ["#0284c7", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
-    const corBase = coresGrad[indexProduto % coresGrad.length];
-    const gradeNome = item.produto.grade ? ` - ${item.produto.grade}` : '';
-    const volumesDoJogo = item.volumesDoJogo;
-
-    for (let jogoIdx = 0; jogoIdx < item.qtdJogos; jogoIdx++) {
-      if (cursorX >= maxColunasVisual) break;
-      const blocoX = 45 + (cursorX * (larguraDisponivel / maxColunasVisual));
-      const larguraBloco = (larguraDisponivel / maxColunasVisual) - 3;
-
-      // Bloco Superior (Planta Baixa - Cada Jogo é um bloco fechado e unido)
-      ctxT.fillStyle = corBase;
-      ctxT.fillRect(blocoX, 30, larguraBloco, 140);
-      ctxT.strokeStyle = "#0f172a";
-      ctxT.lineWidth = 1.5;
-      ctxT.strokeRect(blocoX, 30, larguraBloco, 140);
-
-      ctxT.fillStyle = "#ffffff";
-      ctxT.font = "bold 9px sans-serif";
-      ctxT.fillText(`J${jogoIdx+1}: ${item.produto.codigo}${gradeNome}`, blocoX + 3, 44);
-
-      // Listagem dos volumes dentro do bloco do jogo (Garante visualmente que estão juntos)
-      let alturaVol = 120 / volumesDoJogo.length;
-      volumesDoJogo.forEach((vol, vIdx) => {
-        let volY = 48 + (vIdx * alturaVol);
-        ctxT.strokeStyle = "rgba(255,255,255,0.6)";
-        ctxT.strokeRect(blocoX + 2, volY, larguraBloco - 4, alturaVol - 2);
-        
-        ctxT.fillStyle = "#ffffff";
-        ctxT.font = "8px sans-serif";
-        ctxT.fillText(`${vol.numero} (${vol.descricao.substring(0, 10)})`, blocoX + 4, volY + (alturaVol / 2) + 3);
-      });
-
-      // Vista Lateral (Elevação)
-      ctxS.fillStyle = corBase;
-      ctxS.fillRect(blocoX, 30, larguraBloco, 140);
-      ctxS.strokeStyle = "#0f172a";
-      ctxS.strokeRect(blocoX, 30, larguraBloco, 140);
-
-      ctxS.fillStyle = "#ffffff";
-      ctxS.font = "bold 9px sans-serif";
-      ctxS.fillText(`Jogo ${jogoIdx+1}`, blocoX + 3, 60);
-      ctxS.font = "8px sans-serif";
-      ctxS.fillText(`${item.produto.codigo}${gradeNome}`, blocoX + 3, 75);
-
-      cursorX++;
-    }
-  });
-}
-
-function gerarInstrucoesTextoReal(itens, veiculo) {
-  const isSider = veiculo.tipo === "Sider";
-  const container = document.getElementById('sim-instrucoes');
-
-  let html = `
-    <h4>INSTRUÇÕES DE CARREGAMENTO INTELIGENTE (BLOCOS UNIFICADOS):</h4>
-    <ul>
-      <li><strong>INTEGRIDADE DO JOGO (BLOCO ÚNICO):</strong> É terminantemente proibido separar os volumes de um mesmo jogo. O conjunto completo (${item => item} volumes) deve ser acomodado lado a lado na carroceria, garantindo que o operador recolha o jogo inteiro de uma só vez.</li>
-      <li><strong>RESPEITO ÀS DIMENSÕES DA CARROCERIA:</strong> Veículo ${veiculo.nome} (${veiculo.comprimento}m C x ${veiculo.largura}m L). Os volumes pesados e estruturais devem ir na base, enquanto volumes menores (como pés e fundos) e espelhos devem ser travados no miolo do respectivo bloco.</li>
-  `;
-
-  itens.forEach(item => {
-    html += `
-      <li><strong>Produto ${item.produto.codigo} - ${item.produto.descricao} (Grade: ${item.produto.grade || 'Padrão'}):</strong>
-        <ul>
-          <li>Qtd Solicitada: ${item.qtdJogos} Jogos | Composição de cada jogo: <strong>${item.volumesDoJogo.map(v => `${v.numero} (${v.descricao})`).join(' + ')}</strong>.</li>
-          <li>Norma de Paletização no Destino: ${item.normaRef.unificador} (${item.normaRef.jogosPorPalete} jogos/palete).</li>
-        </ul>
-      </li>
+  volumesDisponiveisPatio.forEach(vol => {
+    const card = document.createElement('div');
+    card.className = 'vol-card-dock';
+    card.style.borderLeft = `5px solid ${vol.cor}`;
+    card.innerHTML = `
+      <strong>${vol.prodCodigo} (Jogo ${vol.jogoNum})</strong><br>
+      Vol: ${vol.volNumero} - ${vol.descricao}<br>
+      <small>Tam: ${vol.prof}m x ${vol.largura}m x ${vol.altura}m | <strong>${vol.peso} kg</strong></small><br>
+      <button class="btn-primary" style="padding: 2px 8px; font-size: 0.7rem; margin-top: 5px;" onclick="carregarVolumeNoCaminhao('${vol.id}')">➕ Posicionar no Veículo</button>
     `;
+    container.appendChild(card);
   });
-
-  if (isSider) {
-    html += `<li><strong>Operação Sider:</strong> Alinhar os blocos completos longitudinalmente para descarga lateral limpa pela lona.</li>`;
-  } else {
-    html += `<li><strong>Operação Baú:</strong> Posicionar do fundo para a porta traseira, mantendo a sequência exata de entrega.</li>`;
-  }
-
-  html += `</ul>`;
-  container.innerHTML = html;
 }
 
-window.exportarPDF = function() {
-  const { jsPDF } = window.jspdf;
-  const element = document.getElementById('relatorio-impressao');
+window.carregarVolumeNoCaminhao = function(volId) {
+  const idx = volumesDisponiveisPatio.findIndex(v => v.id === volId);
+  if (idx === -1) return;
+
+  const vol = volumesDisponiveisPatio.splice(idx, 1)[0];
   
-  document.querySelectorAll('.print-hide').forEach(el => el.style.display = 'none');
-
-  html2canvas(element, { scale: 2 }).then(canvas => {
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const imgProps = pdf.getImageProperties(imgData);
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`Instrucao_Carregamento_${Date.now()}.pdf`);
-
-    document.querySelectorAll('.print-hide').forEach(el => el.style.display = 'flex');
-  });
+  // Posicionamento sequencial no caminhão
+  const posX = (volumesNoCaminhao.length * 0.6) - (veiculoSelecionado.comprimento / 2) + 0.5;
+  vol.posicao = { x: posX, y: vol.altura / 2, z: 0 };
+  
+  volumesNoCaminhao.push(vol);
+  
+  renderizarPatio();
+  adicionarBlocoAoCenario3D(vol);
+  calcularBalançoPeso();
 };
 
-window.exportarImagensPNG = function() {
-  const canvases = ['canvas-palete', 'canvas-carga-top', 'canvas-carga-side'];
-  canvases.forEach((id, index) => {
-    const cv = document.getElementById(id);
-    const link = document.createElement('a');
-    link.download = `desenho_${id}_${index+1}.png`;
-    link.href = cv.toDataURL('image/png');
-    link.click();
+function inicializarCenario3D() {
+  const container = document.getElementById('canvas-3d-container');
+  container.innerHTML = '';
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0f172a);
+
+  camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+  camera.position.set(veiculoSelecionado.comprimento * 1.2, 8, veiculoSelecionado.comprimento * 1.2);
+  camera.lookAt(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  container.appendChild(renderer.domElement);
+
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(10, 20, 10);
+  scene.add(light);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+  // Desenha a Caçamba do Veículo
+  const comp = veiculoSelecionado.comprimento;
+  const larg = veiculoSelecionado.largura;
+  const alt = veiculoSelecionado.altura;
+
+  const geo = new THREE.BoxGeometry(comp, alt, larg);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true });
+  vehicleMesh = new THREE.Mesh(geo, mat);
+  scene.add(vehicleMesh);
+
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+function adicionarBlocoAoCenario3D(vol) {
+  const geo = new THREE.BoxGeometry(vol.prof, vol.altura, vol.largura);
+  const mat = new THREE.MeshLambertMaterial({ color: vol.cor });
+  const mesh = new THREE.Mesh(geo, mat);
+  
+  mesh.position.set(vol.posicao.x, vol.posicao.y - (veiculoSelecionado.altura/2), vol.posicao.z);
+  scene.add(mesh);
+}
+
+function calcularBalançoPeso() {
+  let pesoFrente = 0, pesoMeio = 0, pesoTras = 0;
+  let pesoEsq = 0, pesoDir = 0, pesoTotal = 0;
+
+  const comp = veiculoSelecionado.comprimento;
+  const limFrente = comp / 6;
+  const limTras = -comp / 6;
+
+  volumesNoCaminhao.forEach(v => {
+    const p = v.peso;
+    pesoTotal += p;
+
+    if (v.posicao.x > limFrente) pesoFrente += p;
+    else if (v.posicao.x < limTras) pesoTras += p;
+    else pesoMeio += p;
+
+    if (v.posicao.z >= 0) pesoDir += p;
+    else pesoEsq += p;
   });
+
+  const percentF = pesoTotal ? Math.round((pesoFrente / pesoTotal) * 100) : 0;
+  const percentM = pesoTotal ? Math.round((pesoMeio / pesoTotal) * 100) : 0;
+  const percentT = pesoTotal ? Math.round((pesoTras / pesoTotal) * 100) : 0;
+
+  atualizarElementoStat('stat-frente', `Frente: ${pesoFrente.toFixed(1)} kg (${percentF}%)`, percentF > 45);
+  atualizarElementoStat('stat-meio', `Meio: ${pesoMeio.toFixed(1)} kg (${percentM}%)`, percentM > 60);
+  atualizarElementoStat('stat-tras', `Trás: ${pesoTras.toFixed(1)} kg (${percentT}%)`, percentT > 45);
+}
+
+function atualizarElementoStat(id, texto, alerta) {
+  const el = document.getElementById(id);
+  el.innerText = texto;
+  el.className = alerta ? 'weight-indicator weight-alert' : 'weight-indicator weight-ok';
+}
+
+window.trocarAba = function(aba) {
+  if (aba === 'auto') {
+    document.getElementById('aba-conteudo-auto').classList.remove('hidden');
+    document.getElementById('aba-conteudo-3d').classList.add('hidden');
+  } else {
+    document.getElementById('aba-conteudo-auto').classList.add('hidden');
+    document.getElementById('aba-conteudo-3d').classList.remove('hidden');
+  }
+};
+
+window.resetarPosicoes3D = function() {
+  executarSimulacaoMultipla();
 };
 
 carregarSelectsSimulacao();

@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LogiPalete - Cadastro de Produtos e Normas</title>
+  <title>LogiPalete - Produtos & Normas</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <header class="navbar">
-    <h1>LogiPalete <span>| Produtos & Normas</span></h1>
+    <h1>LogiPalete <span>| Cadastro WMS</span></h1>
     <nav>
       <button class="nav-btn active" onclick="location.href='index.html'">Produtos & Normas</button>
-      <button class="nav-btn" onclick="location.href='veiculos.html'">Veículos Padrão</button>
-      <button class="nav-btn" onclick="location.href='simulacao.html'">Simulação & Carregamento</button>
+      <button class="nav-btn" onclick="location.href='veiculos.html'">Veículos & API</button>
+      <button class="nav-btn" onclick="location.href='simulacao.html'">Simulação & Montagem 3D</button>
     </nav>
   </header>
 
@@ -42,11 +42,11 @@
         </div>
 
         <h3 style="margin-top: 20px;">Normas de Paletização (Blocos Fixos WMS)</h3>
-        <p class="help-text">Selecione o unifizador fixo e agrupe os volumes correspondentes a cada norma, exatamente como no seu WMS.</p>
+        <p class="help-text">Informe o unificador fixo e adicione os volumes referentes a este produto.</p>
         
         <div id="normas-container"></div>
         
-        <button type="button" class="btn-secondary" onclick="adicionarNormaBloco()" style="margin-top: 10px;">+ Adicionar Nova Norma de Paletização</button>
+        <button type="button" class="btn-secondary" onclick="adicionarNormaBloco()" style="margin-top: 10px;">+ Adicionar Norma de Paletização</button>
 
         <div class="form-actions" style="margin-top: 25px;">
           <button type="submit" class="btn-primary">Salvar Produto e Normas</button>
@@ -56,7 +56,7 @@
     </section>
 
     <div class="card">
-      <h2>Produtos Cadastrados</h2>
+      <h2>Produtos Cadastrados no Banco</h2>
       <div class="table-responsive">
         <table>
           <thead>

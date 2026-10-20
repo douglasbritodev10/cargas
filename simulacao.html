@@ -3,73 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LogiPalete - Simulação e Carregamento</title>
+  <title>LogiPalete - Simulação & Montagem 3D</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 
   <header class="navbar">
-    <h1>LogiPalete <span>| Simulação & Carregamento</span></h1>
+    <h1>LogiPalete <span>| Simulação e Montagem 3D Manual</span></h1>
     <nav>
       <button class="nav-btn" onclick="location.href='index.html'">Produtos & Normas</button>
-      <button class="nav-btn" onclick="location.href='veiculos.html'">Veículos Padrão</button>
-      <button class="nav-btn active" onclick="location.href='simulacao.html'">Simulação & Carregamento</button>
+      <button class="nav-btn" onclick="location.href='veiculos.html'">Veículos & API</button>
+      <button class="nav-btn active" onclick="location.href='simulacao.html'">Simulação & Montagem 3D</button>
     </nav>
   </header>
 
   <main class="container">
     <section class="card">
-      <h2>Simulação de Carregamento Batido Organizado (Múltiplos Produtos)</h2>
-      <p class="help-text">Selecione os produtos (com suas grades) e informe a quantidade de jogos para simular a carga e o desmembramento de paletes.</p>
+      <h2>1. Selecionar Produtos e Quantidade de Jogos</h2>
+      <p class="help-text">Selecione os produtos e quantidade de kits/jogos para que o sistema libere os volumes no pátio de montagem.</p>
       
       <div id="simulacao-produtos-container"></div>
       
-      <button type="button" class="btn-secondary" onclick="adicionarLinhaSimulacao()" style="margin-bottom: 15px;">+ Adicionar Outro Produto na Carga</button>
+      <button type="button" class="btn-secondary" onclick="adicionarLinhaSimulacao()" style="margin-bottom: 15px;">+ Adicionar Outro Produto</button>
 
       <div class="form-grid" style="border-top: 1px solid #e2e8f0; padding-top: 15px;">
         <div class="field">
-          <label>Selecione o Veículo Padrão</label>
+          <label>Selecione o Veículo</label>
           <select id="sim-veiculo" required></select>
         </div>
       </div>
 
       <div class="form-actions" style="margin-top: 15px;">
-        <button class="btn-primary" onclick="executarSimulacaoMultipla()">Gerar Plano de Carregamento Inteligente</button>
+        <button class="btn-primary" onclick="executarSimulacaoMultipla()">Liberar Volumes e Iniciar Montagem</button>
       </div>
     </section>
 
-    <!-- ÁREA IMPRESSA / EXPORTADA -->
-    <div id="relatorio-impressao" class="card hidden">
-      <div class="header-impressao">
-        <h2>Ficha de Instrução de Carregamento e Paletização</h2>
-        <p>Planejamento de carga batida e desmembramento inteligente de paletes no destino.</p>
+    <!-- ABAS DA SIMULAÇÃO -->
+    <div id="area-simulacao" class="hidden">
+      <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+        <button class="btn-primary" id="btn-aba-auto" onclick="trocarAba('auto')">📋 Relatório e Plano Automático</button>
+        <button class="btn-secondary" id="btn-aba-3d" onclick="trocarAba('3d')" style="background: #0f172a; color: white;">🚛 ABA SEPARADA: Montagem Manual 3D / 2D</button>
       </div>
 
-      <div id="sim-resumo" class="resumo-box"></div>
-
-      <h3>1. Planejamento e Desmembramento de Paletes no Destino</h3>
-      <div id="sim-paletes-desmembramento" class="resumo-box"></div>
-      <div class="canvas-wrapper">
-        <canvas id="canvas-palete" width="400" height="300"></canvas>
+      <!-- ABA 1: PLANO E DESMEMBRAMENTO WMS -->
+      <div id="aba-conteudo-auto" class="card">
+        <h2>Plano de Carga Batida e Desmembramento de Paletes</h2>
+        <div id="sim-resumo" style="background:#f1f5f9; padding:12px; border-radius:6px; margin-bottom:15px;"></div>
+        <div id="sim-paletes-desmembramento" style="background:#f1f5f9; padding:12px; border-radius:6px; margin-bottom:15px;"></div>
+        
+        <div class="form-actions">
+          <button class="btn-primary" onclick="exportarPDF()">📄 Exportar Ficha em PDF</button>
+        </div>
       </div>
 
-      <h3>2. Estratégia Visual de Arrumação na Carga Batida</h3>
-      <p class="help-text" id="desc-estrategia"></p>
-      <div class="canvas-wrapper">
-        <h4>Vista Superior (Planta Baixa)</h4>
-        <canvas id="canvas-carga-top" width="750" height="220"></canvas>
-        <h4>Vista Lateral (Elevação)</h4>
-        <canvas id="canvas-carga-side" width="750" height="200"></canvas>
-      </div>
+      <!-- ABA 2: TELA SEPARADA DE MONTAGEM MANUAL INTERATIVA 3D -->
+      <div id="aba-conteudo-3d" class="card hidden">
+        <h2>Montagem Manual Interativa e Indicador de Distribuição de Peso</h2>
+        <p class="help-text">Arraste os volumes individualmente do pátio para dentro do caminhão. Monitore o equilíbrio de peso (Frente, Centro, Trás, Esquerda, Direita).</p>
 
-      <h3>3. Instruções Descritivas ao Fornecedor e Operação</h3>
-      <div id="sim-instrucoes" class="instrucoes-box"></div>
+        <!-- STATUS DE DISTRIBUIÇÃO DE PESO REAL-TIME -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 15px;">
+          <div id="stat-frente" class="weight-indicator weight-ok">Frente: 0 kg (0%)</div>
+          <div id="stat-meio" class="weight-indicator weight-ok">Meio: 0 kg (0%)</div>
+          <div id="stat-tras" class="weight-indicator weight-ok">Trás: 0 kg (0%)</div>
+          <div id="stat-lateral" class="weight-indicator weight-ok">Esq: 50% | Dir: 50%</div>
+        </div>
 
-      <div class="form-actions print-hide" style="margin-top: 20px;">
-        <button class="btn-primary" onclick="exportarPDF()">📄 Exportar Ficha em PDF</button>
-        <button class="btn-secondary" onclick="exportarImagensPNG()">🖼️ Baixar Desenhos em PNG</button>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+          <!-- PÁTIO DE VOLUMES LIBERADOS POR COR ÚNICA -->
+          <div style="width: 280px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px;">
+            <h4 style="font-size: 0.85rem; margin-bottom: 10px; color: #0284c7;">📦 Volumes Disponíveis no Pátio</h4>
+            <div id="dock-patio-volumes" style="max-height: 400px; overflow-y: auto;"></div>
+          </div>
+
+          <!-- CANVAS DE VISUALIZAÇÃO 3D INTERATIVA -->
+          <div style="flex: 1; min-width: 320px;">
+            <div id="canvas-3d-container" style="width: 100%; height: 420px; background: #0f172a; border-radius: 8px; position: relative;"></div>
+            <div style="margin-top: 8px; display: flex; gap: 8px;">
+              <button class="btn-secondary" onclick="resetarPosicoes3D()">🔄 Limpar Caçamba</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </main>
