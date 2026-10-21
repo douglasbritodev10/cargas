@@ -3,27 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LogiPalete - Simulação & Montagem 3D</title>
+  <title>LogiPalete - Simulação & Montagem 3D Profissional</title>
   <link rel="stylesheet" href="style.css">
+  <!-- Three.js e OrbitControls -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
 
   <header class="navbar">
-    <h1>LogiPalete <span>| Simulação e Montagem 3D Manual</span></h1>
+    <h1>LogiPalete <span>| Montagem 3D Profissional</span></h1>
     <nav>
       <button class="nav-btn" onclick="location.href='index.html'">Produtos & Normas</button>
       <button class="nav-btn" onclick="location.href='veiculos.html'">Veículos & API</button>
-      <button class="nav-btn active" onclick="location.href='simulacao.html'">Simulação & Montagem 3D</button>
+      <button class="nav-btn active" onclick="location.href='simulacao.html'">Simulação 3D</button>
     </nav>
   </header>
 
-  <main class="container">
+  <main class="container" style="max-width: 1450px;">
+    <!-- ETAPA 1: SELEÇÃO DE PRODUTOS E VEÍCULO -->
     <section class="card">
-      <h2>1. Selecionar Produtos e Quantidade de Jogos</h2>
-      <p class="help-text">Selecione os produtos e quantidade de kits/jogos para que o sistema libere os volumes no pátio de montagem.</p>
+      <h2>1. Selecionar Produtos e Veículo para a Carga</h2>
+      <p class="help-text">Selecione os produtos e quantidade de jogos. O sistema liberará todos os volumes individuais no pátio para você montar a carga livremente.</p>
       
       <div id="simulacao-produtos-container"></div>
       
@@ -37,56 +38,65 @@
       </div>
 
       <div class="form-actions" style="margin-top: 15px;">
-        <button class="btn-primary" onclick="executarSimulacaoMultipla()">Liberar Volumes e Iniciar Montagem</button>
+        <button class="btn-primary" onclick="iniciarMontagemProfissional()">Liberar Pátio e Iniciar Montagem 3D</button>
       </div>
     </section>
 
-    <!-- ABAS DA SIMULAÇÃO -->
-    <div id="area-simulacao" class="hidden">
-      <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-        <button class="btn-primary" id="btn-aba-auto" onclick="trocarAba('auto')">📋 Relatório e Plano Automático</button>
-        <button class="btn-secondary" id="btn-aba-3d" onclick="trocarAba('3d')" style="background: #0f172a; color: white;">🚛 ABA SEPARADA: Montagem Manual 3D / 2D</button>
+    <!-- ETAPA 2: AMBIENTE PROFISSIONAL DE MONTAGEM 3D -->
+    <div id="area-montagem-3d" class="card hidden">
+      <h2>2. Ambiente 3D de Montagem Livre (Empilhamento e Inspeção)</h2>
+      <p class="help-text">
+        <strong>Instruções:</strong> Clique em um volume no Pátio para adicioná-lo automaticamente no melhor espaço disponível na caçamba. 
+        <strong>Clique em qualquer caixa dentro do caminhão</strong> para selecioná-la, identificá-la ou ajustar sua posição exata com o mouse e setas. O sistema impede que a carga ultrapasse as paredes da caçamba.
+      </p>
+
+      <!-- INDICADORES DE PESO E EQUILÍBRIO -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 15px;">
+        <div id="stat-frente" class="weight-indicator weight-ok">Frente: 0 kg (0%)</div>
+        <div id="stat-meio" class="weight-indicator weight-ok">Centro: 0 kg (0%)</div>
+        <div id="stat-tras" class="weight-indicator weight-ok">Trás: 0 kg (0%)</div>
+        <div id="stat-lateral" class="weight-indicator weight-ok">Esq: 50% | Dir: 50%</div>
       </div>
 
-      <!-- ABA 1: PLANO E DESMEMBRAMENTO WMS -->
-      <div id="aba-conteudo-auto" class="card">
-        <h2>Plano de Carga Batida e Desmembramento de Paletes</h2>
-        <div id="sim-resumo" style="background:#f1f5f9; padding:12px; border-radius:6px; margin-bottom:15px;"></div>
-        <div id="sim-paletes-desmembramento" style="background:#f1f5f9; padding:12px; border-radius:6px; margin-bottom:15px;"></div>
+      <!-- CONTADORES DE JOGOS -->
+      <div class="resumo-box" style="margin-bottom: 15px;">
+        <h4 style="margin-bottom: 5px; color: #0284c7;">📊 Progresso dos Jogos de Produtos:</h4>
+        <div id="lista-contadores-progresso">Nenhum volume carregado.</div>
+      </div>
+
+      <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-start;">
         
-        <div class="form-actions">
-          <button class="btn-primary" onclick="exportarPDF()">📄 Exportar Ficha em PDF</button>
-        </div>
-      </div>
-
-      <!-- ABA 2: TELA SEPARADA DE MONTAGEM MANUAL INTERATIVA 3D -->
-      <div id="aba-conteudo-3d" class="card hidden">
-        <h2>Montagem Manual Interativa e Indicador de Distribuição de Peso</h2>
-        <p class="help-text">Arraste os volumes individualmente do pátio para dentro do caminhão. Monitore o equilíbrio de peso (Frente, Centro, Trás, Esquerda, Direita).</p>
-
-        <!-- STATUS DE DISTRIBUIÇÃO DE PESO REAL-TIME -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 15px;">
-          <div id="stat-frente" class="weight-indicator weight-ok">Frente: 0 kg (0%)</div>
-          <div id="stat-meio" class="weight-indicator weight-ok">Meio: 0 kg (0%)</div>
-          <div id="stat-tras" class="weight-indicator weight-ok">Trás: 0 kg (0%)</div>
-          <div id="stat-lateral" class="weight-indicator weight-ok">Esq: 50% | Dir: 50%</div>
+        <!-- PÁTIO DE VOLUMES -->
+        <div style="width: 290px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px;">
+          <h4 style="font-size: 0.9rem; margin-bottom: 10px; color: #0f172a;">📦 Pátio de Volumes Livres</h4>
+          <div id="dock-patio-volumes" style="max-height: 520px; overflow-y: auto;"></div>
         </div>
 
-        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-          <!-- PÁTIO DE VOLUMES LIBERADOS POR COR ÚNICA -->
-          <div style="width: 280px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px;">
-            <h4 style="font-size: 0.85rem; margin-bottom: 10px; color: #0284c7;">📦 Volumes Disponíveis no Pátio</h4>
-            <div id="dock-patio-volumes" style="max-height: 400px; overflow-y: auto;"></div>
-          </div>
-
-          <!-- CANVAS DE VISUALIZAÇÃO 3D INTERATIVA -->
-          <div style="flex: 1; min-width: 320px;">
-            <div id="canvas-3d-container" style="width: 100%; height: 420px; background: #0f172a; border-radius: 8px; position: relative;"></div>
-            <div style="margin-top: 8px; display: flex; gap: 8px;">
-              <button class="btn-secondary" onclick="resetarPosicoes3D()">🔄 Limpar Caçamba</button>
+        <!-- CANVAS 3D INTERATIVO -->
+        <div style="flex: 1; min-width: 450px;">
+          <div id="canvas-3d-viewport" style="width: 100%; height: 550px; background: #090d16; border-radius: 8px; position: relative; overflow: hidden;">
+            <div style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(15, 23, 42, 0.9); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 0.75rem;">
+              <strong>🎮 Controles 3D:</strong><br>
+              • Girar Câmera: Clique esquerdo + Arraste<br>
+              • Mover Câmera: Botão direito + Arraste<br>
+              • Zoom: Roda do mouse<br>
+              • <strong>Selecionar Caixa: Clique em cima da caixa no 3D</strong>
             </div>
           </div>
         </div>
+
+        <!-- PAINEL DE INSPEÇÃO E AJUSTE FINO DA CAIXA SELECIONADA -->
+        <div style="width: 310px; background: #f1f5f9; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px;" id="painel-inspecao-caixa">
+          <h4 style="font-size: 0.9rem; color: #0284c7; margin-bottom: 10px;">🔍 Inspeção e Ajuste Fino</h4>
+          <div id="conteudo-painel-inspecao">
+            <p style="font-size: 0.8rem; color: #64748b;">Nenhuma caixa selecionada. Clique em uma caixa dentro da caçamba 3D para ver a qual produto pertence, seu peso, dimensões e ajustar sua posição ou rotação.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="form-actions" style="margin-top: 20px;">
+        <button class="btn-primary" onclick="window.print()">🖨️ Imprimir / Gerar PDF do Relatório</button>
       </div>
     </div>
   </main>

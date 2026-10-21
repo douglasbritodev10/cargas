@@ -1,11 +1,16 @@
 import { db, collection, getDocs, doc, getDoc } from './firebase.js';
 
 let produtosDisponiveisCache = [];
-let volumesDisponiveisPatio = [];
-let volumesNoCaminhao = [];
-let veiculoSelecionado = null;
+let volumesPatio = [];
+let volumesNoCarro = [];
+let veiculoAtual = null;
+let itensSimulacaoCache = [];
+let volumeSelecionadoUID = null;
 
-let scene, camera, renderer, vehicleMesh;
+// Three.js
+let scene, camera, renderer, controls;
+let truckContainerGroup, meshesInTruck = [];
+let raycaster, mouse;
 
 async function carregarSelectsSimulacao() {
   const prodsSnap = await getDocs(collection(db, "produtos"));
@@ -19,7 +24,7 @@ async function carregarSelectsSimulacao() {
     selVeic.innerHTML = '';
     const veics = await getDocs(collection(db, "veiculos"));
     veics.forEach(d => {
-      selVeic.innerHTML += `<option value="${d.id}">[${d.data().tipo}] ${d.data().nome} (${d.data().comprimento}m C x ${d.data().largura}m L)</option>`;
+      selVeic.innerHTML += `<option value="${d.id}">[${d.data().tipo}] ${d.data().nome} (${d.data().comprimento}m C x ${d.data().largura}m L x ${d.data().altura}m A)</option>`;
     });
   }
 
@@ -52,7 +57,7 @@ window.adicionarLinhaSimulacao = function() {
     </div>
     <div class="field">
       <label>Qtd de Jogos (Kits)</label>
-      <input type="number" class="sim-prod-qtd" value="5" min="1" required>
+      <input type="number" class="sim-prod-qtd" value="3" min="1" required>
     </div>
     <div class="field" style="display: flex; align-items: flex-end;">
       <button type="button" class="btn-remove" onclick="document.getElementById('${linhaId}').remove()">Remover</button>
@@ -61,7 +66,7 @@ window.adicionarLinhaSimulacao = function() {
   container.appendChild(div);
 };
 
-window.executarSimulacaoMultipla = async function() {
+window.iniciarMontagemProfissional = async function() {
   const linhas = document.querySelectorAll('#simulacao-produtos-container > div');
   if (linhas.length === 0) return alert("Adicione produtos à simulação!");
 
@@ -69,14 +74,16 @@ window.executarSimulacaoMultipla = async function() {
   if (!veicId) return alert("Selecione um veículo!");
 
   const veicSnap = await getDoc(doc(db, "veiculos", veicId));
-  veiculoSelecionado = veicSnap.data();
+  veiculoAtual = veicSnap.data();
 
-  volumesDisponiveisPatio = [];
-  volumesNoCaminhao = [];
-  let resumoPaletesHtml = "";
-  const CORES_PALETA = ["#0284c7", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"];
+  volumesPatio = [];
+  volumesNoCarro = [];
+  itensSimulacaoCache = [];
+  volumeSelecionadoUID = null;
 
+  const CORES_PALETA = [0x0284c7, 0x10b981, 0xf59e0b, 0x8b5cf6, 0xec4899, 0x06b6d4, 0xef4444];
   let prodIndex = 0;
+
   for (let linha of linhas) {
     const prodId = linha.querySelector('.sim-prod-select').value;
     const qtdJogos = parseInt(linha.querySelector('.sim-prod-qtd').value) || 0;
@@ -86,178 +93,394 @@ window.executarSimulacaoMultipla = async function() {
     const prodObj = produtosDisponiveisCache.find(p => p.id === prodId);
     if (!prodObj) continue;
 
-    const corProduto = CORES_PALETA[prodIndex % CORES_PALETA.length];
+    const corHex = CORES_PALETA[prodIndex % CORES_PALETA.length];
     prodIndex++;
 
-    const normaRef = prodObj.normasPaletizacao && prodObj.normasPaletizacao.length > 0 ? prodObj.normasPaletizacao[0] : { unificador: 'PALETE 1.60 X 1.60', jogosPorPalete: 10 };
-    const jogosPorPalete = normaRef.jogosPorPalete || 10;
-    const paletesFechados = Math.floor(qtdJogos / jogosPorPalete);
-    const sobra = qtdJogos % jogosPorPalete;
+    const volumesDoJogo = prodObj.volumes || [];
+    if (volumesDoJogo.length === 0) {
+      alert(`O produto ${prodObj.codigo} não possui volumes cadastrados!`);
+      return;
+    }
 
-    resumoPaletesHtml += `
-      <div style="margin-bottom:8px; border-bottom:1px dashed #cbd5e1; padding-bottom:6px;">
-        <strong>${prodObj.codigo} - ${prodObj.descricao}</strong> (${qtdJogos} jogos)<br>
-        • Desmembramento Destino (${normaRef.unificador}): ${paletesFechados} paletes fechados + ${sobra > 0 ? `1 palete com ${sobra} jogos` : '0 sobra'}.
-      </div>
-    `;
+    itensSimulacaoCache.push({
+      produto: prodObj,
+      qtdJogosTotal: qtdJogos,
+      volumesDoJogo: volumesDoJogo
+    });
 
-    // Desmembra jogos e cria cada volume com cor e dimensões
     for (let j = 1; j <= qtdJogos; j++) {
-      (prodObj.volumes || []).forEach(v => {
-        volumesDisponiveisPatio.push({
-          id: `vol-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          prodCodigo: prodObj.codigo,
+      volumesDoJogo.forEach(v => {
+        volumesPatio.push({
+          uid: 'vol-' + Math.random().toString(36).substr(2, 9),
+          prodId: prodObj.id,
+          codigo: prodObj.codigo,
+          descricaoProd: prodObj.descricao,
+          grade: prodObj.grade || 'Padrão',
           jogoNum: j,
-          volNumero: v.numero,
-          descricao: v.descricao,
-          largura: parseFloat(v.largura) || 0.5,
-          altura: parseFloat(v.altura) || 0.5,
-          prof: parseFloat(v.prof) || 0.5,
-          peso: parseFloat(v.peso) || 10,
-          cor: corProduto
+          volNum: v.numero,
+          volDesc: v.descricao,
+          largura: parseFloat(v.largura) || 0.6,  // Z
+          altura: parseFloat(v.altura) || 0.4,   // Y
+          prof: parseFloat(v.prof) || 1.2,      // X
+          peso: parseFloat(v.peso) || 15,
+          corHex: corHex,
+          pos: { x: 0, y: 0, z: 0 },
+          rot: { x: 0, y: 0, z: 0 }
         });
       });
     }
   }
 
-  document.getElementById('area-simulacao').classList.remove('hidden');
-  document.getElementById('sim-resumo').innerHTML = `
-    <strong>Veículo:</strong> ${veiculoSelecionado.nome} (${veiculoSelecionado.tipo}) | Dimensões Úteis: ${veiculoSelecionado.comprimento}m C x ${veiculoSelecionado.largura}m L x ${veiculoSelecionado.altura}m A
-  `;
-  document.getElementById('sim-paletes-desmembramento').innerHTML = resumoPaletesHtml;
+  if (volumesPatio.length === 0) return alert("Selecione produtos válidos!");
 
-  renderizarPatio();
-  inicializarCenario3D();
+  document.getElementById('area-montagem-3d').classList.remove('hidden');
+  
+  inicializarCenarioThreeJS();
+  atualizarPatioEDock();
+  atualizarContadoresProgresso();
+  calcularBalancoPeso3D();
+  renderizarPainelInspecao();
 };
 
-function renderizarPatio() {
-  const container = document.getElementById('dock-patio-volumes');
-  container.innerHTML = '';
-
-  volumesDisponiveisPatio.forEach(vol => {
-    const card = document.createElement('div');
-    card.className = 'vol-card-dock';
-    card.style.borderLeft = `5px solid ${vol.cor}`;
-    card.innerHTML = `
-      <strong>${vol.prodCodigo} (Jogo ${vol.jogoNum})</strong><br>
-      Vol: ${vol.volNumero} - ${vol.descricao}<br>
-      <small>Tam: ${vol.prof}m x ${vol.largura}m x ${vol.altura}m | <strong>${vol.peso} kg</strong></small><br>
-      <button class="btn-primary" style="padding: 2px 8px; font-size: 0.7rem; margin-top: 5px;" onclick="carregarVolumeNoCaminhao('${vol.id}')">➕ Posicionar no Veículo</button>
-    `;
-    container.appendChild(card);
-  });
-}
-
-window.carregarVolumeNoCaminhao = function(volId) {
-  const idx = volumesDisponiveisPatio.findIndex(v => v.id === volId);
-  if (idx === -1) return;
-
-  const vol = volumesDisponiveisPatio.splice(idx, 1)[0];
-  
-  // Posicionamento sequencial no caminhão
-  const posX = (volumesNoCaminhao.length * 0.6) - (veiculoSelecionado.comprimento / 2) + 0.5;
-  vol.posicao = { x: posX, y: vol.altura / 2, z: 0 };
-  
-  volumesNoCaminhao.push(vol);
-  
-  renderizarPatio();
-  adicionarBlocoAoCenario3D(vol);
-  calcularBalançoPeso();
-};
-
-function inicializarCenario3D() {
-  const container = document.getElementById('canvas-3d-container');
+function inicializarCenarioThreeJS() {
+  const container = document.getElementById('canvas-3d-viewport');
   container.innerHTML = '';
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0f172a);
+  scene.background = new THREE.Color(0x090d16);
 
   camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-  camera.position.set(veiculoSelecionado.comprimento * 1.2, 8, veiculoSelecionado.comprimento * 1.2);
-  camera.lookAt(0, 0, 0);
+  camera.position.set(veiculoAtual.comprimento * 1.1, veiculoAtual.altura * 2.5, veiculoAtual.largura * 2.5);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.shadowMap.enabled = true;
   container.appendChild(renderer.domElement);
 
-  const light = new THREE.DirectionalLight(0xffffff, 1);
-  light.position.set(10, 20, 10);
-  scene.add(light);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
 
-  // Desenha a Caçamba do Veículo
-  const comp = veiculoSelecionado.comprimento;
-  const larg = veiculoSelecionado.largura;
-  const alt = veiculoSelecionado.altura;
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
 
-  const geo = new THREE.BoxGeometry(comp, alt, larg);
-  const mat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true });
-  vehicleMesh = new THREE.Mesh(geo, mat);
-  scene.add(vehicleMesh);
+  // Evento de clique no 3D para selecionar a caixa
+  renderer.domElement.addEventListener('click', onCanvasClick, false);
 
-  function animate() {
-    requestAnimationFrame(animate);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambientLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(20, 40, 20);
+  scene.add(dirLight);
+
+  const gridHelper = new THREE.GridHelper(30, 30, 0x0284c7, 0x334155);
+  gridHelper.position.y = -0.01;
+  scene.add(gridHelper);
+
+  truckContainerGroup = new THREE.Group();
+  scene.add(truckContainerGroup);
+
+  construirEstruturaCaminhao3D();
+
+  function renderLoop() {
+    requestAnimationFrame(renderLoop);
+    controls.update();
     renderer.render(scene, camera);
   }
-  animate();
+  renderLoop();
 }
 
-function adicionarBlocoAoCenario3D(vol) {
-  const geo = new THREE.BoxGeometry(vol.prof, vol.altura, vol.largura);
-  const mat = new THREE.MeshLambertMaterial({ color: vol.cor });
-  const mesh = new THREE.Mesh(geo, mat);
+function construirEstruturaCaminhao3D() {
+  const comp = veiculoAtual.comprimento;
+  const larg = veiculoAtual.largura;
+  const alt = veiculoAtual.altura;
+
+  // Piso
+  const floorGeo = new THREE.BoxGeometry(comp, 0.08, larg);
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+  const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+  floorMesh.position.set(0, 0, 0);
+  truckContainerGroup.add(floorMesh);
+
+  // Armação da Caçamba Transparente
+  const boxGeo = new THREE.BoxGeometry(comp, alt, larg);
+  const wireMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.35 });
+  const wireMesh = new THREE.Mesh(boxGeo, wireMat);
+  wireMesh.position.set(0, alt / 2, 0);
+  truckContainerGroup.add(wireMesh);
+
+  // Cabine
+  const cabGeo = new THREE.BoxGeometry(1.2, alt * 0.9, larg);
+  const cabMat = new THREE.MeshStandardMaterial({ color: 0x0284c7 });
+  const cabMesh = new THREE.Mesh(cabGeo, cabMat);
+  cabMesh.position.set(-comp / 2 - 0.6, alt * 0.45, 0);
+  truckContainerGroup.add(cabMesh);
+}
+
+// Clique no ambiente 3D para selecionar caixa
+function onCanvasClick(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(meshesInTruck);
+
+  if (intersects.length > 0) {
+    const clickedMesh = intersects[0].object;
+    volumeSelecionadoUID = clickedMesh.userData.uid;
+  } else {
+    volumeSelecionadoUID = null;
+  }
+
+  renderizarVolumes3DNaCena();
+  renderizarPainelInspecao();
+}
+
+// Posicionamento inteligente automático no primeiro espaço livre ou empilhado
+window.adicionarVolumeAoVeiculoInteligente = function(uid) {
+  const idx = volumesPatio.findIndex(v => v.uid === uid);
+  if (idx === -1) return;
+
+  const vol = volumesPatio.splice(idx, 1)[0];
   
-  mesh.position.set(vol.posicao.x, vol.posicao.y - (veiculoSelecionado.altura/2), vol.posicao.z);
-  scene.add(mesh);
+  // Calcula posição inicial inteligente (do fundo para a porta, respeitando empilhamento)
+  let startX = -veiculoAtual.comprimento / 2 + (vol.prof / 2) + 0.1;
+  let startZ = 0;
+  let startY = vol.altura / 2 + 0.04;
+
+  // Verifica se já existe algo no mesmo eixo X e Z para empilhar em cima
+  let maxHeightNoPonto = 0.04;
+  volumesNoCarro.forEach(vCarro => {
+    if (Math.abs(vCarro.pos.x - startX) < 0.5 && Math.abs(vCarro.pos.z - startZ) < 0.5) {
+      let topo = vCarro.pos.y + (vCarro.altura / 2);
+      if (topo > maxHeightNoPonto) maxHeightNoPonto = topo;
+    }
+  });
+
+  startY = maxHeightNoPonto + (vol.altura / 2);
+
+  vol.pos.x = startX;
+  vol.pos.y = startY;
+  vol.pos.z = startZ;
+
+  volumesNoCarro.push(vol);
+  volumeSelecionadoUID = vol.uid;
+
+  renderizarVolumes3DNaCena();
+  atualizarPatioEDock();
+  atualizarContadoresProgresso();
+  calcularBalancoPeso3D();
+  renderizarPainelInspecao();
+};
+
+window.retornarVolumeAoPatio = function(uid) {
+  const idx = volumesNoCarro.findIndex(v => v.uid === uid);
+  if (idx === -1) return;
+
+  const vol = volumesNoCarro.splice(idx, 1)[0];
+  volumesPatio.push(vol);
+
+  if (volumeSelecionadoUID === uid) volumeSelecionadoUID = null;
+
+  renderizarVolumes3DNaCena();
+  atualizarPatioEDock();
+  atualizarContadoresProgresso();
+  calcularBalancoPeso3D();
+  renderizarPainelInspecao();
+};
+
+// Restrição estricta para nunca deixar o volume sair de dentro do veículo
+window.ajustarPosicaoVolume = function(eixo, delta) {
+  if (!volumeSelecionadoUID) return;
+  const vol = volumesNoCarro.find(v => v.uid === volumeSelecionadoUID);
+  if (!vol) return;
+
+  vol.pos[eixo] += delta;
+
+  // Limites da Caçamba
+  const meioComp = veiculoAtual.comprimento / 2;
+  const meioLarg = veiculoAtual.largura / 2;
+  const altMax = veiculoAtual.altura;
+
+  if (vol.pos.x - (vol.prof/2) < -meioComp) vol.pos.x = -meioComp + (vol.prof/2);
+  if (vol.pos.x + (vol.prof/2) > meioComp) vol.pos.x = meioComp - (vol.prof/2);
+
+  if (vol.pos.z - (vol.largura/2) < -meioLarg) vol.pos.z = -meioLarg + (vol.largura/2);
+  if (vol.pos.z + (vol.largura/2) > meioLarg) vol.pos.z = meioLarg - (vol.largura/2);
+
+  if (vol.pos.y - (vol.altura/2) < 0.04) vol.pos.y = 0.04 + (vol.altura/2);
+  if (vol.pos.y + (vol.altura/2) > altMax) vol.pos.y = altMax - (vol.altura/2);
+
+  renderizarVolumes3DNaCena();
+  calcularBalancoPeso3D();
+};
+
+window.rotacionarVolumeSelecionado = function(eixo, angulo) {
+  if (!volumeSelecionadoUID) return;
+  const vol = volumesNoCarro.find(v => v.uid === volumeSelecionadoUID);
+  if (!vol) return;
+
+  vol.rot[eixo] += angulo;
+  renderizarVolumes3DNaCena();
+};
+
+function renderizarVolumes3DNaCena() {
+  meshesInTruck.forEach(mesh => truckContainerGroup.remove(mesh));
+  meshesInTruck = [];
+
+  volumesNoCarro.forEach(vol => {
+    const geo = new THREE.BoxGeometry(vol.prof, vol.altura, vol.largura);
+    const mat = new THREE.MeshStandardMaterial({
+      color: vol.corHex,
+      roughness: 0.3,
+      metalness: 0.1
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(vol.pos.x, vol.pos.y, vol.pos.z);
+    mesh.rotation.set(vol.rot.x, vol.rot.y, vol.rot.z);
+
+    // Destaque se estiver selecionado
+    if (vol.uid === volumeSelecionadoUID) {
+      const edgesGeo = new THREE.EdgesGeometry(geo);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 3 });
+      const wireframe = new THREE.LineSegments(edgesGeo, lineMat);
+      mesh.add(wireframe);
+    }
+
+    mesh.userData = { uid: vol.uid };
+    truckContainerGroup.add(mesh);
+    meshesInTruck.push(mesh);
+  });
 }
 
-function calcularBalançoPeso() {
+function atualizarPatioEDock() {
+  const dock = document.getElementById('dock-patio-volumes');
+  dock.innerHTML = '';
+
+  if (volumesPatio.length === 0) {
+    dock.innerHTML = `<p style="font-size:0.8rem; color:#64748b; text-align:center; padding:15px;">Todos os volumes foram carregados!</p>`;
+  } else {
+    volumesPatio.forEach(v => {
+      const card = document.createElement('div');
+      card.className = 'vol-card-dock';
+      card.style.borderLeft = `5px solid #${v.corHex.toString(16).padStart(6, '0')}`;
+      card.innerHTML = `
+        <strong>${v.codigo} (Jogo ${v.jogoNum})</strong><br>
+        <span style="font-size:0.75rem; color:#475569;">Vol ${v.volNum}: ${v.volDesc}</span><br>
+        <small>Dim: ${v.prof}m x ${v.largura}m x ${v.altura}m | <strong>${v.peso}kg</strong></small>
+        <div style="margin-top: 5px;">
+          <button class="btn-primary" style="padding: 2px 8px; font-size: 0.7rem;" onclick="adicionarVolumeAoVeiculoInteligente('${v.uid}')">➕ Adicionar na Caçamba</button>
+        </div>
+      `;
+      dock.appendChild(card);
+    });
+  }
+}
+
+function renderizarPainelInspecao() {
+  const container = document.getElementById('conteudo-painel-inspecao');
+  
+  if (!volumeSelecionadoUID) {
+    container.innerHTML = `<p style="font-size: 0.8rem; color: #64748b;">Nenhuma caixa selecionada. Clique em qualquer caixa dentro da caçamba 3D para inspecioná-la e reposicioná-la.</p>`;
+    return;
+  }
+
+  const vol = volumesNoCarro.find(v => v.uid === volumeSelecionadoUID);
+  if (!vol) return;
+
+  container.innerHTML = `
+    <div style="background:#fff; padding:10px; border-radius:6px; border-left: 4px solid #${vol.corHex.toString(16).padStart(6, '0')}; margin-bottom:12px;">
+      <strong style="color: #0284c7;">📦 ${vol.codigo} - ${vol.descricaoProd}</strong><br>
+      <span style="font-size:0.8rem;">Jogo nº ${vol.jogoNum} | Vol: <strong>${vol.volNum} (${vol.volDesc})</strong></span><br>
+      <small>Grade: ${vol.grade} | Peso: <strong>${vol.peso} kg</strong></small><br>
+      <small>Dimensões reais: C: ${vol.prof}m | L: ${vol.largura}m | A: ${vol.altura}m</small>
+    </div>
+
+    <h5 style="font-size:0.8rem; margin-bottom:6px;">📍 Ajuste Fino de Posição:</h5>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:12px;">
+      <button class="btn-secondary" style="font-size:0.75rem" onclick="ajustarPosicaoVolume('x', -0.1)">⬅ Frente (-X)</button>
+      <button class="btn-secondary" style="font-size:0.75rem" onclick="ajustarPosicaoVolume('x', 0.1)">Trás (+X) ➡</button>
+      <button class="btn-secondary" style="font-size:0.75rem" onclick="ajustarPosicaoVolume('z', -0.1)">⬅ Esquerda (-Z)</button>
+      <button class="btn-secondary" style="font-size:0.75rem" onclick="ajustarPosicaoVolume('z', 0.1)">Direita (+Z) ➡</button>
+      <button class="btn-secondary" style="font-size:0.75rem" onclick="ajustarPosicaoVolume('y', 0.1)">⬆ Subir (+Y)</button>
+      <button class="btn-secondary" style="font-size:0.75rem" onclick="ajustarPosicaoVolume('y', -0.1)">⬇ Descer (-Y)</button>
+    </div>
+
+    <h5 style="font-size:0.8rem; margin-bottom:6px;">🔄 Rotação 3D (Deitado / Em Pé):</h5>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:12px;">
+      <button class="btn-secondary" style="font-size:0.75rem" onclick="rotacionarVolumeSelecionado('y', Math.PI/2)">🔄 Girar 90°</button>
+      <button class="btn-secondary" style="font-size:0.75rem" onclick="rotacionarVolumeSelecionado('z', Math.PI/2)">📐 Deitar / Em pé</button>
+    </div>
+
+    <button class="btn-remove" style="width:100%; font-size:0.8rem; margin-top:8px;" onclick="retornarVolumeAoPatio('${vol.uid}')">🗑️ Retornar Volume ao Pátio</button>
+  `;
+}
+
+function atualizarContadoresProgresso() {
+  const container = document.getElementById('lista-contadores-progresso');
+  let html = '';
+
+  itensSimulacaoCache.forEach(item => {
+    const totalJogos = item.qtdJogosTotal;
+    const volsNoJogo = item.volumesDoJogo.length;
+
+    let jogosCompletos = 0;
+    for (let j = 1; j <= totalJogos; j++) {
+      const volsNoCarro = volumesNoCarro.filter(v => v.prodId === item.produto.id && v.jogoNum === j);
+      if (volsNoCarro.length === volsNoJogo) jogosCompletos++;
+    }
+
+    const totalVolsNoCarro = volumesNoCarro.filter(v => v.prodId === item.produto.id).length;
+
+    html += `
+      <div style="font-size: 0.85rem; margin-bottom: 4px;">
+        • <strong>${item.produto.codigo} - ${item.produto.descricao}</strong>: 
+        <strong>${jogosCompletos} de ${totalJogos} Jogos Completos</strong> carregados (Volumes no carro: ${totalVolsNoCarro} / ${totalJogos * volsNoJogo})
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function calcularBalancoPeso3D() {
   let pesoFrente = 0, pesoMeio = 0, pesoTras = 0;
   let pesoEsq = 0, pesoDir = 0, pesoTotal = 0;
 
-  const comp = veiculoSelecionado.comprimento;
-  const limFrente = comp / 6;
-  const limTras = -comp / 6;
+  const comp = veiculoAtual.comprimento;
 
-  volumesNoCaminhao.forEach(v => {
-    const p = v.peso;
-    pesoTotal += p;
+  volumesNoCarro.forEach(v => {
+    pesoTotal += v.peso;
 
-    if (v.posicao.x > limFrente) pesoFrente += p;
-    else if (v.posicao.x < limTras) pesoTras += p;
-    else pesoMeio += p;
+    if (v.pos.x < -comp / 6) pesoFrente += v.peso;
+    else if (v.pos.x > comp / 6) pesoTras += v.peso;
+    else pesoMeio += v.peso;
 
-    if (v.posicao.z >= 0) pesoDir += p;
-    else pesoEsq += p;
+    if (v.pos.z < 0) pesoEsq += v.peso;
+    else pesoDir += v.peso;
   });
 
-  const percentF = pesoTotal ? Math.round((pesoFrente / pesoTotal) * 100) : 0;
-  const percentM = pesoTotal ? Math.round((pesoMeio / pesoTotal) * 100) : 0;
-  const percentT = pesoTotal ? Math.round((pesoTras / pesoTotal) * 100) : 0;
+  const pF = pesoTotal ? Math.round((pesoFrente / pesoTotal) * 100) : 0;
+  const pM = pesoTotal ? Math.round((pesoMeio / pesoTotal) * 100) : 0;
+  const pT = pesoTotal ? Math.round((pesoTras / pesoTotal) * 100) : 0;
+  const pE = pesoTotal ? Math.round((pesoEsq / pesoTotal) * 100) : 50;
+  const pD = pesoTotal ? Math.round((pesoDir / pesoTotal) * 100) : 50;
 
-  atualizarElementoStat('stat-frente', `Frente: ${pesoFrente.toFixed(1)} kg (${percentF}%)`, percentF > 45);
-  atualizarElementoStat('stat-meio', `Meio: ${pesoMeio.toFixed(1)} kg (${percentM}%)`, percentM > 60);
-  atualizarElementoStat('stat-tras', `Trás: ${pesoTras.toFixed(1)} kg (${percentT}%)`, percentT > 45);
+  atualizarStat('stat-frente', `Frente: ${pesoFrente.toFixed(1)} kg (${pF}%)`, pF > 45);
+  atualizarStat('stat-meio', `Centro: ${pesoMeio.toFixed(1)} kg (${pM}%)`, pM > 60);
+  atualizarStat('stat-tras', `Trás: ${pesoTras.toFixed(1)} kg (${pT}%)`, pT > 45);
+  atualizarStat('stat-lateral', `Esq: ${pE}% | Dir: ${pD}%`, Math.abs(pE - pD) > 20);
 }
 
-function atualizarElementoStat(id, texto, alerta) {
+function atualizarStat(id, texto, alerta) {
   const el = document.getElementById(id);
-  el.innerText = texto;
-  el.className = alerta ? 'weight-indicator weight-alert' : 'weight-indicator weight-ok';
-}
-
-window.trocarAba = function(aba) {
-  if (aba === 'auto') {
-    document.getElementById('aba-conteudo-auto').classList.remove('hidden');
-    document.getElementById('aba-conteudo-3d').classList.add('hidden');
-  } else {
-    document.getElementById('aba-conteudo-auto').classList.add('hidden');
-    document.getElementById('aba-conteudo-3d').classList.remove('hidden');
+  if (el) {
+    el.innerText = texto;
+    el.className = alerta ? 'weight-indicator weight-alert' : 'weight-indicator weight-ok';
   }
-};
-
-window.resetarPosicoes3D = function() {
-  executarSimulacaoMultipla();
-};
+}
 
 carregarSelectsSimulacao();
