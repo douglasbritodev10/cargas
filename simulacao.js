@@ -7,10 +7,12 @@ let veiculoAtual = null;
 let itensSimulacaoCache = [];
 let volumeSelecionadoUID = null;
 
-// Three.js
+// Three.js e Dragging
 let scene, camera, renderer, controls;
 let truckContainerGroup, meshesInTruck = [];
 let raycaster, mouse;
+let planeGround, isDragging = false, dragMesh = null;
+let dragOffset = new THREE.Vector3();
 
 async function carregarSelectsSimulacao() {
   const prodsSnap = await getDocs(collection(db, "produtos"));
@@ -37,6 +39,7 @@ async function carregarSelectsSimulacao() {
 
 window.adicionarLinhaSimulacao = function() {
   const container = document.getElementById('simulacao-produtos-container');
+  if (!container) return;
   const linhaId = 'sim-prod-row-' + Date.now();
   
   const div = document.createElement('div');
@@ -142,6 +145,30 @@ window.iniciarMontagemProfissional = async function() {
   renderizarPainelInspecao();
 };
 
+function criarTexturaEtiqueta(vol) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = `#${vol.corHex.toString(16).padStart(6, '0')}`;
+  ctx.fillRect(0, 0, 256, 128);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(8, 8, 240, 112);
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 20px Arial';
+  ctx.fillText(`${vol.codigo}`, 16, 32);
+
+  ctx.font = '14px Arial';
+  ctx.fillText(`Grade: ${vol.grade}`, 16, 56);
+  ctx.fillText(`Vol: ${vol.volNum} (${vol.volDesc})`, 16, 78);
+  ctx.fillText(`Jogo ${vol.jogoNum} - ${vol.peso} kg`, 16, 100);
+
+  return new THREE.CanvasTexture(canvas);
+}
+
 function inicializarCenarioThreeJS() {
   const container = document.getElementById('canvas-3d-viewport');
   container.innerHTML = '';
@@ -164,10 +191,19 @@ function inicializarCenarioThreeJS() {
   raycaster = new THREE.Raycaster();
   mouse = new THREE.Vector2();
 
-  // Evento de clique no 3D para selecionar a caixa
-  renderer.domElement.addEventListener('click', onCanvasClick, false);
+  // Plano invisível no piso para auxiliar o Drag & Drop 3D
+  const planeGeo = new THREE.PlaneGeometry(100, 100);
+  planeGeo.rotateX(-Math.PI / 2);
+  const planeMat = new THREE.MeshBasicMaterial({ visible: false });
+  planeGround = new THREE.Mesh(planeGeo, planeMat);
+  scene.add(planeGround);
 
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  // Eventos para Arrastar e Soltar (Drag and Drop 3D)
+  renderer.domElement.addEventListener('pointerdown', onPointerDown, false);
+  renderer.domElement.addEventListener('pointermove', onPointerMove, false);
+  renderer.domElement.addEventListener('pointerup', onPointerUp, false);
+
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
   scene.add(ambientLight);
 
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -203,7 +239,7 @@ function construirEstruturaCaminhao3D() {
   floorMesh.position.set(0, 0, 0);
   truckContainerGroup.add(floorMesh);
 
-  // Armação da Caçamba Transparente
+  // Caçamba Transparente
   const boxGeo = new THREE.BoxGeometry(comp, alt, larg);
   const wireMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.35 });
   const wireMesh = new THREE.Mesh(boxGeo, wireMat);
@@ -218,61 +254,133 @@ function construirEstruturaCaminhao3D() {
   truckContainerGroup.add(cabMesh);
 }
 
-// Clique no ambiente 3D para selecionar caixa
-function onCanvasClick(event) {
+// Drag & Drop no 3D
+function getMousePos(event) {
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
+function onPointerDown(event) {
+  if (event.button !== 0) return; // Apenas clique esquerdo
+  getMousePos(event);
 
   raycaster.setFromCamera(mouse, camera);
   const intersects = raycaster.intersectObjects(meshesInTruck);
 
   if (intersects.length > 0) {
-    const clickedMesh = intersects[0].object;
-    volumeSelecionadoUID = clickedMesh.userData.uid;
+    dragMesh = intersects[0].object;
+    volumeSelecionadoUID = dragMesh.userData.uid;
+    isDragging = true;
+    controls.enabled = false; // Desativa a rotação de câmera durante o drag
+
+    const planeIntersect = raycaster.intersectObject(planeGround);
+    if (planeIntersect.length > 0) {
+      dragOffset.copy(planeIntersect[0].point).sub(dragMesh.position);
+    }
   } else {
     volumeSelecionadoUID = null;
   }
 
-  renderizarVolumes3DNaCena();
+  renderizerVolumes3DNaCena();
   renderizarPainelInspecao();
 }
 
-// Posicionamento inteligente automático no primeiro espaço livre ou empilhado
+function onPointerMove(event) {
+  if (!isDragging || !dragMesh) return;
+  getMousePos(event);
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(planeGround);
+
+  if (intersects.length > 0) {
+    const vol = volumesNoCarro.find(v => v.uid === dragMesh.userData.uid);
+    if (!vol) return;
+
+    const newPos = intersects[0].point.sub(dragOffset);
+    vol.pos.x = newPos.x;
+    vol.pos.z = newPos.z;
+
+    // Recalcula o empilhamento (Snap de Altura Y)
+    recalcularEmpilhamentoVolume(vol);
+    validarLimitesVeiculo(vol);
+
+    dragMesh.position.set(vol.pos.x, vol.pos.y, vol.pos.z);
+    calcularBalancoPeso3D();
+  }
+}
+
+function onPointerUp() {
+  if (isDragging) {
+    isDragging = false;
+    dragMesh = null;
+    controls.enabled = true;
+    renderizerVolumes3DNaCena();
+    renderizarPainelInspecao();
+  }
+}
+
+function recalcularEmpilhamentoVolume(vol) {
+  let maxBaseY = 0.04; // Nível do chão
+
+  volumesNoCarro.forEach(outro => {
+    if (outro.uid === vol.uid) return;
+
+    const sobreposicaoX = Math.abs(outro.pos.x - vol.pos.x) < (outro.prof / 2 + vol.prof / 2) - 0.05;
+    const sobreposicaoZ = Math.abs(outro.pos.z - vol.pos.z) < (outro.largura / 2 + vol.largura / 2) - 0.05;
+
+    if (sobreposicaoX && sobreposicaoZ) {
+      const topoOutro = outro.pos.y + (outro.altura / 2);
+      if (topoOutro > maxBaseY) {
+        maxBaseY = topoOutro;
+      }
+    }
+  });
+
+  vol.pos.y = maxBaseY + (vol.altura / 2);
+}
+
+function validarLimitesVeiculo(vol) {
+  const meioComp = veiculoAtual.comprimento / 2;
+  const meioLarg = veiculoAtual.largura / 2;
+
+  if (vol.pos.x - (vol.prof / 2) < -meioComp) vol.pos.x = -meioComp + (vol.prof / 2);
+  if (vol.pos.x + (vol.prof / 2) > meioComp) vol.pos.x = meioComp - (vol.prof / 2);
+
+  if (vol.pos.z - (vol.largura / 2) < -meioLarg) vol.pos.z = -meioLarg + (vol.largura / 2);
+  if (vol.pos.z + (vol.largura / 2) > meioLarg) vol.pos.z = meioLarg - (vol.largura / 2);
+
+  if (vol.pos.y + (vol.altura / 2) > veiculoAtual.altura) {
+    vol.pos.y = veiculoAtual.altura - (vol.altura / 2);
+  }
+}
+
+// Inserção automática inteligente
 window.adicionarVolumeAoVeiculoInteligente = function(uid) {
   const idx = volumesPatio.findIndex(v => v.uid === uid);
   if (idx === -1) return;
 
   const vol = volumesPatio.splice(idx, 1)[0];
   
-  // Calcula posição inicial inteligente (do fundo para a porta, respeitando empilhamento)
-  let startX = -veiculoAtual.comprimento / 2 + (vol.prof / 2) + 0.1;
-  let startZ = 0;
-  let startY = vol.altura / 2 + 0.04;
+  vol.pos.x = -veiculoAtual.comprimento / 2 + (vol.prof / 2) + 0.1;
+  vol.pos.z = 0;
 
-  // Verifica se já existe algo no mesmo eixo X e Z para empilhar em cima
-  let maxHeightNoPonto = 0.04;
-  volumesNoCarro.forEach(vCarro => {
-    if (Math.abs(vCarro.pos.x - startX) < 0.5 && Math.abs(vCarro.pos.z - startZ) < 0.5) {
-      let topo = vCarro.pos.y + (vCarro.altura / 2);
-      if (topo > maxHeightNoPonto) maxHeightNoPonto = topo;
-    }
-  });
-
-  startY = maxHeightNoPonto + (vol.altura / 2);
-
-  vol.pos.x = startX;
-  vol.pos.y = startY;
-  vol.pos.z = startZ;
+  recalcularEmpilhamentoVolume(vol);
+  validarLimitesVeiculo(vol);
 
   volumesNoCarro.push(vol);
   volumeSelecionadoUID = vol.uid;
 
-  renderizarVolumes3DNaCena();
+  renderizerVolumes3DNaCena();
   atualizarPatioEDock();
   atualizarContadoresProgresso();
   calcularBalancoPeso3D();
   renderizarPainelInspecao();
+};
+
+window.carregarBlocoInteiro = function(codigo, volNum) {
+  const paraMover = volumesPatio.filter(v => v.codigo === codigo && v.volNum === volNum);
+  paraMover.forEach(v => adicionarVolumeAoVeiculoInteligente(v.uid));
 };
 
 window.retornarVolumeAoPatio = function(uid) {
@@ -284,14 +392,13 @@ window.retornarVolumeAoPatio = function(uid) {
 
   if (volumeSelecionadoUID === uid) volumeSelecionadoUID = null;
 
-  renderizarVolumes3DNaCena();
+  renderizerVolumes3DNaCena();
   atualizarPatioEDock();
   atualizarContadoresProgresso();
   calcularBalancoPeso3D();
   renderizarPainelInspecao();
 };
 
-// Restrição estricta para nunca deixar o volume sair de dentro do veículo
 window.ajustarPosicaoVolume = function(eixo, delta) {
   if (!volumeSelecionadoUID) return;
   const vol = volumesNoCarro.find(v => v.uid === volumeSelecionadoUID);
@@ -299,21 +406,10 @@ window.ajustarPosicaoVolume = function(eixo, delta) {
 
   vol.pos[eixo] += delta;
 
-  // Limites da Caçamba
-  const meioComp = veiculoAtual.comprimento / 2;
-  const meioLarg = veiculoAtual.largura / 2;
-  const altMax = veiculoAtual.altura;
+  if (eixo === 'x' || eixo === 'z') recalcularEmpilhamentoVolume(vol);
+  validarLimitesVeiculo(vol);
 
-  if (vol.pos.x - (vol.prof/2) < -meioComp) vol.pos.x = -meioComp + (vol.prof/2);
-  if (vol.pos.x + (vol.prof/2) > meioComp) vol.pos.x = meioComp - (vol.prof/2);
-
-  if (vol.pos.z - (vol.largura/2) < -meioLarg) vol.pos.z = -meioLarg + (vol.largura/2);
-  if (vol.pos.z + (vol.largura/2) > meioLarg) vol.pos.z = meioLarg - (vol.largura/2);
-
-  if (vol.pos.y - (vol.altura/2) < 0.04) vol.pos.y = 0.04 + (vol.altura/2);
-  if (vol.pos.y + (vol.altura/2) > altMax) vol.pos.y = altMax - (vol.altura/2);
-
-  renderizarVolumes3DNaCena();
+  renderizerVolumes3DNaCena();
   calcularBalancoPeso3D();
 };
 
@@ -323,26 +419,27 @@ window.rotacionarVolumeSelecionado = function(eixo, angulo) {
   if (!vol) return;
 
   vol.rot[eixo] += angulo;
-  renderizarVolumes3DNaCena();
+  renderizerVolumes3DNaCena();
 };
 
-function renderizarVolumes3DNaCena() {
+function renderizerVolumes3DNaCena() {
   meshesInTruck.forEach(mesh => truckContainerGroup.remove(mesh));
   meshesInTruck = [];
 
   volumesNoCarro.forEach(vol => {
     const geo = new THREE.BoxGeometry(vol.prof, vol.altura, vol.largura);
-    const mat = new THREE.MeshStandardMaterial({
-      color: vol.corHex,
-      roughness: 0.3,
-      metalness: 0.1
-    });
+    const texture = criarTexturaEtiqueta(vol);
 
-    const mesh = new THREE.Mesh(geo, mat);
+    const matCor = new THREE.MeshStandardMaterial({ color: vol.corHex, roughness: 0.4 });
+    const matEtiqueta = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.3 });
+
+    // Materiais em cada face (Etiqueta nas faces frontais/traseiras para fácil leitura)
+    const materials = [matCor, matCor, matCor, matCor, matEtiqueta, matEtiqueta];
+
+    const mesh = new THREE.Mesh(geo, materials);
     mesh.position.set(vol.pos.x, vol.pos.y, vol.pos.z);
     mesh.rotation.set(vol.rot.x, vol.rot.y, vol.rot.z);
 
-    // Destaque se estiver selecionado
     if (vol.uid === volumeSelecionadoUID) {
       const edgesGeo = new THREE.EdgesGeometry(geo);
       const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 3 });
@@ -358,33 +455,49 @@ function renderizarVolumes3DNaCena() {
 
 function atualizarPatioEDock() {
   const dock = document.getElementById('dock-patio-volumes');
+  if (!dock) return;
   dock.innerHTML = '';
 
   if (volumesPatio.length === 0) {
-    dock.innerHTML = `<p style="font-size:0.8rem; color:#64748b; text-align:center; padding:15px;">Todos os volumes foram carregados!</p>`;
-  } else {
-    volumesPatio.forEach(v => {
-      const card = document.createElement('div');
-      card.className = 'vol-card-dock';
-      card.style.borderLeft = `5px solid #${v.corHex.toString(16).padStart(6, '0')}`;
-      card.innerHTML = `
-        <strong>${v.codigo} (Jogo ${v.jogoNum})</strong><br>
-        <span style="font-size:0.75rem; color:#475569;">Vol ${v.volNum}: ${v.volDesc}</span><br>
-        <small>Dim: ${v.prof}m x ${v.largura}m x ${v.altura}m | <strong>${v.peso}kg</strong></small>
-        <div style="margin-top: 5px;">
-          <button class="btn-primary" style="padding: 2px 8px; font-size: 0.7rem;" onclick="adicionarVolumeAoVeiculoInteligente('${v.uid}')">➕ Adicionar na Caçamba</button>
-        </div>
-      `;
-      dock.appendChild(card);
-    });
+    dock.innerHTML = `<p style="font-size:0.8rem; color:#64748b; text-align:center; padding:15px;">Todos os volumes foram carregados na caçamba!</p>`;
+    return;
   }
+
+  // Agrupa os volumes no pátio em blocos homogêneos
+  const grupos = {};
+  volumesPatio.forEach(v => {
+    const chave = `${v.codigo}_${v.volNum}`;
+    if (!grupos[chave]) grupos[chave] = [];
+    grupos[chave].push(v);
+  });
+
+  Object.keys(grupos).forEach(chave => {
+    const lista = grupos[chave];
+    const primeiro = lista[0];
+
+    const card = document.createElement('div');
+    card.className = 'vol-card-dock';
+    card.style.borderLeft = `6px solid #${primeiro.corHex.toString(16).padStart(6, '0')}`;
+    card.innerHTML = `
+      <strong style="color:#0f172a;">${primeiro.codigo} - Grade: ${primeiro.grade}</strong><br>
+      <span style="font-size:0.75rem; color:#0284c7; font-weight:bold;">Vol ${primeiro.volNum}: ${primeiro.volDesc}</span><br>
+      <small>Disponível no pátio: <strong>${lista.length} bloco(s)</strong></small><br>
+      <small>Dim: ${primeiro.prof}m(C) x ${primeiro.largura}m(L) x ${primeiro.altura}m(A) | ${primeiro.peso}kg</small>
+      <div style="margin-top: 6px; display:flex; gap:5px;">
+        <button class="btn-primary" style="padding: 3px 6px; font-size: 0.7rem; flex:1;" onclick="adicionarVolumeAoVeiculoInteligente('${primeiro.uid}')">➕ Mover 1 Unid.</button>
+        <button class="btn-secondary" style="padding: 3px 6px; font-size: 0.7rem;" onclick="carregarBlocoInteiro('${primeiro.codigo}', '${primeiro.volNum}')">📦 Mover Bloco (${lista.length})</button>
+      </div>
+    `;
+    dock.appendChild(card);
+  });
 }
 
 function renderizarPainelInspecao() {
   const container = document.getElementById('conteudo-painel-inspecao');
+  if (!container) return;
   
   if (!volumeSelecionadoUID) {
-    container.innerHTML = `<p style="font-size: 0.8rem; color: #64748b;">Nenhuma caixa selecionada. Clique em qualquer caixa dentro da caçamba 3D para inspecioná-la e reposicioná-la.</p>`;
+    container.innerHTML = `<p style="font-size: 0.8rem; color: #64748b;">Nenhuma caixa selecionada. Clique ou arraste qualquer caixa na caçamba 3D para ajustá-la.</p>`;
     return;
   }
 
@@ -421,6 +534,7 @@ function renderizarPainelInspecao() {
 
 function atualizarContadoresProgresso() {
   const container = document.getElementById('lista-contadores-progresso');
+  if (!container) return;
   let html = '';
 
   itensSimulacaoCache.forEach(item => {
