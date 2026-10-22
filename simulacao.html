@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,6 +10,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
+
 <body>
 
   <header class="navbar">
@@ -24,11 +26,13 @@
     <!-- ETAPA 1: SELEÇÃO DE PRODUTOS E VEÍCULO -->
     <section class="card">
       <h2>1. Selecionar Produtos e Veículo para a Carga</h2>
-      <p class="help-text">Selecione os produtos e quantidade de jogos. O sistema liberará todos os volumes individuais no pátio para você montar a carga livremente.</p>
-      
+      <p class="help-text">Selecione os produtos e quantidade de jogos. O sistema liberará todos os volumes individuais
+        no pátio para você montar a carga livremente.</p>
+
       <div id="simulacao-produtos-container"></div>
-      
-      <button type="button" class="btn-secondary" onclick="adicionarLinhaSimulacao()" style="margin-bottom: 15px;">+ Adicionar Outro Produto</button>
+
+      <button type="button" class="btn-secondary" onclick="adicionarLinhaSimulacao()" style="margin-bottom: 15px;">+
+        Adicionar Outro Produto</button>
 
       <div class="form-grid" style="border-top: 1px solid #e2e8f0; padding-top: 15px;">
         <div class="field">
@@ -46,12 +50,15 @@
     <div id="area-montagem-3d" class="card hidden">
       <h2>2. Ambiente 3D de Montagem Livre (Empilhamento e Inspeção)</h2>
       <p class="help-text">
-        <strong>Instruções:</strong> Clique em um volume no Pátio para adicioná-lo automaticamente no melhor espaço disponível na caçamba. 
-        <strong>Clique em qualquer caixa dentro do caminhão</strong> para selecioná-la, identificá-la ou ajustar sua posição exata com o mouse e setas. O sistema impede que a carga ultrapasse as paredes da caçamba.
+        <strong>Instruções:</strong> Clique em um volume no Pátio para adicioná-lo automaticamente no melhor espaço
+        disponível na caçamba.
+        <strong>Clique em qualquer caixa dentro do caminhão</strong> para selecioná-la, identificá-la ou ajustar sua
+        posição exata com o mouse e setas. O sistema impede que a carga ultrapasse as paredes da caçamba.
       </p>
 
       <!-- INDICADORES DE PESO E EQUILÍBRIO -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 15px;">
+      <div
+        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 15px;">
         <div id="stat-frente" class="weight-indicator weight-ok">Frente: 0 kg (0%)</div>
         <div id="stat-meio" class="weight-indicator weight-ok">Centro: 0 kg (0%)</div>
         <div id="stat-tras" class="weight-indicator weight-ok">Trás: 0 kg (0%)</div>
@@ -65,7 +72,7 @@
       </div>
 
       <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-start;">
-        
+
         <!-- PÁTIO DE VOLUMES -->
         <div style="width: 290px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px;">
           <h4 style="font-size: 0.9rem; margin-bottom: 10px; color: #0f172a;">📦 Pátio de Volumes Livres</h4>
@@ -74,8 +81,10 @@
 
         <!-- CANVAS 3D INTERATIVO -->
         <div style="flex: 1; min-width: 450px;">
-          <div id="canvas-3d-viewport" style="width: 100%; height: 550px; background: #090d16; border-radius: 8px; position: relative; overflow: hidden;">
-            <div style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(15, 23, 42, 0.9); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 0.75rem;">
+          <div id="canvas-3d-viewport"
+            style="width: 100%; height: 550px; background: #090d16; border-radius: 8px; position: relative; overflow: hidden;">
+            <div
+              style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(15, 23, 42, 0.9); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 0.75rem;">
               <strong>🎮 Controles 3D:</strong><br>
               • Girar Câmera: Clique esquerdo + Arraste<br>
               • Mover Câmera: Botão direito + Arraste<br>
@@ -86,21 +95,30 @@
         </div>
 
         <!-- PAINEL DE INSPEÇÃO E AJUSTE FINO DA CAIXA SELECIONADA -->
-        <div style="width: 310px; background: #f1f5f9; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px;" id="painel-inspecao-caixa">
+        <div style="width: 310px; background: #f1f5f9; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px;"
+          id="painel-inspecao-caixa">
           <h4 style="font-size: 0.9rem; color: #0284c7; margin-bottom: 10px;">🔍 Inspeção e Ajuste Fino</h4>
           <div id="conteudo-painel-inspecao">
-            <p style="font-size: 0.8rem; color: #64748b;">Nenhuma caixa selecionada. Clique em uma caixa dentro da caçamba 3D para ver a qual produto pertence, seu peso, dimensões e ajustar sua posição ou rotação.</p>
+            <p style="font-size: 0.8rem; color: #64748b;">Nenhuma caixa selecionada. Clique em uma caixa dentro da
+              caçamba 3D para ver a qual produto pertence, seu peso, dimensões e ajustar sua posição ou rotação.</p>
           </div>
         </div>
 
       </div>
 
-      <div class="form-actions" style="margin-top: 20px;">
-        <button class="btn-primary" onclick="window.print()">🖨️ Imprimir / Gerar PDF do Relatório</button>
+      <!-- PAINEL DE LEGENDA DE CORES DAS GRADES -->
+      <div id="painel-legenda-cores" style="margin-top: 15px;"></div>
+
+      <!-- AÇÕES DE EXPORTAÇÃO E SALVAMENTO DE PADRÃO IA -->
+      <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px;">
+        <button class="btn-primary" onclick="window.print()">🖨️ Gerar PDF / Imprimir Relatório de Carga</button>
+        <button class="btn-secondary" onclick="salvarModeloCarregamentoBD()"
+          style="background: #10b981; color: white;">💾 Salvar Padrão no Banco (Para Aprendizado IA)</button>
       </div>
     </div>
   </main>
 
   <script type="module" src="simulacao.js"></script>
 </body>
+
 </html>

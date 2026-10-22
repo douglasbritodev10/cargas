@@ -1,4 +1,4 @@
-import { db, collection, getDocs, doc, getDoc } from './firebase.js';
+import { db, collection, getDocs, doc, getDoc, addDoc } from './firebase.js';
 
 let produtosDisponiveisCache = [];
 let volumesPatio = [];
@@ -7,12 +7,16 @@ let veiculoAtual = null;
 let itensSimulacaoCache = [];
 let volumeSelecionadoUID = null;
 
-// Three.js e Dragging
+// Three.js & Controles
 let scene, camera, renderer, controls;
 let truckContainerGroup, meshesInTruck = [];
 let raycaster, mouse;
-let planeGround, isDragging = false, dragMesh = null;
-let dragOffset = new THREE.Vector3();
+
+// Variáveis de Interação de Arraste/Posicionamento em Bloco
+let modoPosicionamentoAtivo = false;
+let blocoEmTransito = []; // Volumes selecionados para posicionamento
+let meshPreviewBloco = null;
+let planoPisoRaycast = null;
 
 async function carregarSelectsSimulacao() {
   const prodsSnap = await getDocs(collection(db, "produtos"));
@@ -39,7 +43,6 @@ async function carregarSelectsSimulacao() {
 
 window.adicionarLinhaSimulacao = function() {
   const container = document.getElementById('simulacao-produtos-container');
-  if (!container) return;
   const linhaId = 'sim-prod-row-' + Date.now();
   
   const div = document.createElement('div');
@@ -84,7 +87,7 @@ window.iniciarMontagemProfissional = async function() {
   itensSimulacaoCache = [];
   volumeSelecionadoUID = null;
 
-  const CORES_PALETA = [0x0284c7, 0x10b981, 0xf59e0b, 0x8b5cf6, 0xec4899, 0x06b6d4, 0xef4444];
+  const CORES_PALETA = [0x0284c7, 0x10b981, 0xf59e0b, 0x8b5cf6, 0xec4899, 0x06b6d4, 0xef4444, 0x6366f1];
   let prodIndex = 0;
 
   for (let linha of linhas) {
@@ -108,7 +111,8 @@ window.iniciarMontagemProfissional = async function() {
     itensSimulacaoCache.push({
       produto: prodObj,
       qtdJogosTotal: qtdJogos,
-      volumesDoJogo: volumesDoJogo
+      volumesDoJogo: volumesDoJogo,
+      corHex: corHex
     });
 
     for (let j = 1; j <= qtdJogos; j++) {
@@ -118,7 +122,7 @@ window.iniciarMontagemProfissional = async function() {
           prodId: prodObj.id,
           codigo: prodObj.codigo,
           descricaoProd: prodObj.descricao,
-          grade: prodObj.grade || 'Padrão',
+          grade: prodObj.grade || 'Única',
           jogoNum: j,
           volNum: v.numero,
           volDesc: v.descricao,
@@ -143,31 +147,8 @@ window.iniciarMontagemProfissional = async function() {
   atualizarContadoresProgresso();
   calcularBalancoPeso3D();
   renderizarPainelInspecao();
+  gerarLegendaCoresAbil();
 };
-
-function criarTexturaEtiqueta(vol) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = `#${vol.corHex.toString(16).padStart(6, '0')}`;
-  ctx.fillRect(0, 0, 256, 128);
-
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(8, 8, 240, 112);
-
-  ctx.fillStyle = '#0f172a';
-  ctx.font = 'bold 20px Arial';
-  ctx.fillText(`${vol.codigo}`, 16, 32);
-
-  ctx.font = '14px Arial';
-  ctx.fillText(`Grade: ${vol.grade}`, 16, 56);
-  ctx.fillText(`Vol: ${vol.volNum} (${vol.volDesc})`, 16, 78);
-  ctx.fillText(`Jogo ${vol.jogoNum} - ${vol.peso} kg`, 16, 100);
-
-  return new THREE.CanvasTexture(canvas);
-}
 
 function inicializarCenarioThreeJS() {
   const container = document.getElementById('canvas-3d-viewport');
@@ -177,7 +158,8 @@ function inicializarCenarioThreeJS() {
   scene.background = new THREE.Color(0x090d16);
 
   camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-  camera.position.set(veiculoAtual.comprimento * 1.1, veiculoAtual.altura * 2.5, veiculoAtual.largura * 2.5);
+  // Posição inicial permitindo ver a frente do veículo claramente
+  camera.position.set(veiculoAtual.comprimento * 1.2, veiculoAtual.altura * 2.2, veiculoAtual.largura * 2.2);
 
   renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setSize(container.clientWidth, container.clientHeight);
@@ -187,21 +169,14 @@ function inicializarCenarioThreeJS() {
   controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
+  controls.maxPolarAngle = Math.PI; // Permite giro livre sem travar o teto/frente
 
   raycaster = new THREE.Raycaster();
   mouse = new THREE.Vector2();
 
-  // Plano invisível no piso para auxiliar o Drag & Drop 3D
-  const planeGeo = new THREE.PlaneGeometry(100, 100);
-  planeGeo.rotateX(-Math.PI / 2);
-  const planeMat = new THREE.MeshBasicMaterial({ visible: false });
-  planeGround = new THREE.Mesh(planeGeo, planeMat);
-  scene.add(planeGround);
-
-  // Eventos para Arrastar e Soltar (Drag and Drop 3D)
-  renderer.domElement.addEventListener('pointerdown', onPointerDown, false);
-  renderer.domElement.addEventListener('pointermove', onPointerMove, false);
-  renderer.domElement.addEventListener('pointerup', onPointerUp, false);
+  // Eventos para clique e movimento do mouse para posicionamento de bloco
+  renderer.domElement.addEventListener('mousemove', onCanvasMouseMove, false);
+  renderer.domElement.addEventListener('click', onCanvasClick, false);
 
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
   scene.add(ambientLight);
@@ -219,6 +194,14 @@ function inicializarCenarioThreeJS() {
 
   construirEstruturaCaminhao3D();
 
+  // Mesh invisível para capturar a posição X, Z do mouse no piso do caminhão
+  const planeGeo = new THREE.PlaneGeometry(veiculoAtual.comprimento, veiculoAtual.largura);
+  planeGeo.rotateX(-Math.PI / 2);
+  const planeMat = new THREE.MeshBasicMaterial({ visible: false });
+  planoPisoRaycast = new THREE.Mesh(planeGeo, planeMat);
+  planoPisoRaycast.position.y = 0.04;
+  truckContainerGroup.add(planoPisoRaycast);
+
   function renderLoop() {
     requestAnimationFrame(renderLoop);
     controls.update();
@@ -232,219 +215,207 @@ function construirEstruturaCaminhao3D() {
   const larg = veiculoAtual.largura;
   const alt = veiculoAtual.altura;
 
-  // Piso
+  // Piso metálico
   const floorGeo = new THREE.BoxGeometry(comp, 0.08, larg);
   const floorMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
   const floorMesh = new THREE.Mesh(floorGeo, floorMat);
   floorMesh.position.set(0, 0, 0);
   truckContainerGroup.add(floorMesh);
 
-  // Caçamba Transparente
+  // Paredes Transparentes do Baú/Sider (Para enxergar a frente e laterais sem obstrução)
   const boxGeo = new THREE.BoxGeometry(comp, alt, larg);
-  const wireMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.35 });
+  const wireMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.25 });
   const wireMesh = new THREE.Mesh(boxGeo, wireMat);
   wireMesh.position.set(0, alt / 2, 0);
   truckContainerGroup.add(wireMesh);
 
-  // Cabine
+  // Cabine Dianteira com Semitransparência (Visão da Frente Sem Barreiras)
   const cabGeo = new THREE.BoxGeometry(1.2, alt * 0.9, larg);
-  const cabMat = new THREE.MeshStandardMaterial({ color: 0x0284c7 });
+  const cabMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, transparent: true, opacity: 0.4 });
   const cabMesh = new THREE.Mesh(cabGeo, cabMat);
   cabMesh.position.set(-comp / 2 - 0.6, alt * 0.45, 0);
   truckContainerGroup.add(cabMesh);
 }
 
-// Drag & Drop no 3D
-function getMousePos(event) {
+// Atualização do indicador preview ao mover o mouse
+function onCanvasMouseMove(event) {
+  if (!modoPosicionamentoAtivo || !meshPreviewBloco) return;
+
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects([planoPisoRaycast, ...meshesInTruck]);
+
+  if (intersects.length > 0) {
+    const pt = intersects[0].point;
+
+    // Converte para o sistema de coordenadas local do caminhão
+    let localX = pt.x;
+    let localZ = pt.z;
+
+    // Respeita as dimensões do veículo
+    const meioComp = veiculoAtual.comprimento / 2;
+    const meioLarg = veiculoAtual.largura / 2;
+
+    const tamX = meshPreviewBloco.userData.tamX;
+    const tamZ = meshPreviewBloco.userData.tamZ;
+
+    if (localX - tamX / 2 < -meioComp) localX = -meioComp + tamX / 2;
+    if (localX + tamX / 2 > meioComp) localX = meioComp - tamX / 2;
+
+    if (localZ - tamZ / 2 < -meioLarg) localZ = -meioLarg + tamZ / 2;
+    if (localZ + tamZ / 2 > meioLarg) localZ = meioLarg - tamZ / 2;
+
+    // Calcula a altura de empilhamento no ponto indicado
+    let maxAltitude = 0.04;
+    volumesNoCarro.forEach(outraBox => {
+      const colideX = Math.abs(outraBox.pos.x - localX) < (outraBox.prof / 2 + tamX / 2);
+      const colideZ = Math.abs(outraBox.pos.z - localZ) < (outraBox.largura / 2 + tamZ / 2);
+      if (colideX && colideZ) {
+        const topo = outraBox.pos.y + outraBox.altura / 2;
+        if (topo > maxAltitude) maxAltitude = topo;
+      }
+    });
+
+    meshPreviewBloco.position.set(localX, maxAltitude + meshPreviewBloco.userData.tamY / 2, localZ);
+  }
 }
 
-function onPointerDown(event) {
-  if (event.button !== 0) return; // Apenas clique esquerdo
-  getMousePos(event);
+// Ação de clique: Selecionar caixa ou Posicionar Bloco Alvo
+function onCanvasClick(event) {
+  if (modoPosicionamentoAtivo && meshPreviewBloco) {
+    // Confirma o posicionamento do bloco na posição exata clicada
+    finalizarPosicionamentoBloco(meshPreviewBloco.position.x, meshPreviewBloco.position.y, meshPreviewBloco.position.z);
+    return;
+  }
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
   raycaster.setFromCamera(mouse, camera);
   const intersects = raycaster.intersectObjects(meshesInTruck);
 
   if (intersects.length > 0) {
-    dragMesh = intersects[0].object;
-    volumeSelecionadoUID = dragMesh.userData.uid;
-    isDragging = true;
-    controls.enabled = false; // Desativa a rotação de câmera durante o drag
-
-    const planeIntersect = raycaster.intersectObject(planeGround);
-    if (planeIntersect.length > 0) {
-      dragOffset.copy(planeIntersect[0].point).sub(dragMesh.position);
-    }
+    const clickedMesh = intersects[0].object;
+    volumeSelecionadoUID = clickedMesh.userData.uid;
   } else {
     volumeSelecionadoUID = null;
   }
 
-  renderizerVolumes3DNaCena();
+  renderizarVolumes3DNaCena();
   renderizarPainelInspecao();
 }
 
-function onPointerMove(event) {
-  if (!isDragging || !dragMesh) return;
-  getMousePos(event);
+// Inicia modo de direcionamento por clique no caminhão
+window.prepararMovimentoBloco = function(prodId, volNum, qtdDesejada) {
+  const candidatos = volumesPatio.filter(v => v.prodId === prodId && v.volNum === volNum);
+  if (candidatos.length === 0) return;
 
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObject(planeGround);
+  const qtdReal = Math.min(qtdDesejada, candidatos.length);
+  blocoEmTransito = candidatos.slice(0, qtdReal);
 
-  if (intersects.length > 0) {
-    const vol = volumesNoCarro.find(v => v.uid === dragMesh.userData.uid);
-    if (!vol) return;
+  const ref = blocoEmTransito[0];
+  const tamX = ref.prof;
+  const tamZ = ref.largura;
+  const tamY = ref.altura * qtdReal; // Empilhamento vertical do bloco
 
-    const newPos = intersects[0].point.sub(dragOffset);
-    vol.pos.x = newPos.x;
-    vol.pos.z = newPos.z;
+  // Cria preview transparente do bloco
+  if (meshPreviewBloco) scene.remove(meshPreviewBloco);
 
-    // Recalcula o empilhamento (Snap de Altura Y)
-    recalcularEmpilhamentoVolume(vol);
-    validarLimitesVeiculo(vol);
-
-    dragMesh.position.set(vol.pos.x, vol.pos.y, vol.pos.z);
-    calcularBalancoPeso3D();
-  }
-}
-
-function onPointerUp() {
-  if (isDragging) {
-    isDragging = false;
-    dragMesh = null;
-    controls.enabled = true;
-    renderizerVolumes3DNaCena();
-    renderizarPainelInspecao();
-  }
-}
-
-function recalcularEmpilhamentoVolume(vol) {
-  let maxBaseY = 0.04; // Nível do chão
-
-  volumesNoCarro.forEach(outro => {
-    if (outro.uid === vol.uid) return;
-
-    const sobreposicaoX = Math.abs(outro.pos.x - vol.pos.x) < (outro.prof / 2 + vol.prof / 2) - 0.05;
-    const sobreposicaoZ = Math.abs(outro.pos.z - vol.pos.z) < (outro.largura / 2 + vol.largura / 2) - 0.05;
-
-    if (sobreposicaoX && sobreposicaoZ) {
-      const topoOutro = outro.pos.y + (outro.altura / 2);
-      if (topoOutro > maxBaseY) {
-        maxBaseY = topoOutro;
-      }
-    }
+  const previewGeo = new THREE.BoxGeometry(tamX, tamY, tamZ);
+  const previewMat = new THREE.MeshStandardMaterial({
+    color: 0x10b981,
+    transparent: true,
+    opacity: 0.5,
+    wireframe: false
   });
 
-  vol.pos.y = maxBaseY + (vol.altura / 2);
-}
+  meshPreviewBloco = new THREE.Mesh(previewGeo, previewMat);
+  meshPreviewBloco.userData = { tamX, tamY, tamZ, qtdReal };
+  scene.add(meshPreviewBloco);
 
-function validarLimitesVeiculo(vol) {
-  const meioComp = veiculoAtual.comprimento / 2;
-  const meioLarg = veiculoAtual.largura / 2;
+  modoPosicionamentoAtivo = true;
+  alert(`Clique no local desejado dentro do caminhão para descarregar o bloco (${qtdReal} volumes)!`);
+};
 
-  if (vol.pos.x - (vol.prof / 2) < -meioComp) vol.pos.x = -meioComp + (vol.prof / 2);
-  if (vol.pos.x + (vol.prof / 2) > meioComp) vol.pos.x = meioComp - (vol.prof / 2);
+function finalizarPosicionamentoBloco(posX, posYBase, posZ) {
+  if (!blocoEmTransito || blocoEmTransito.length === 0) return;
 
-  if (vol.pos.z - (vol.largura / 2) < -meioLarg) vol.pos.z = -meioLarg + (vol.largura / 2);
-  if (vol.pos.z + (vol.largura / 2) > meioLarg) vol.pos.z = meioLarg - (vol.largura / 2);
+  const ref = blocoEmTransito[0];
+  const altUnid = ref.altura;
 
-  if (vol.pos.y + (vol.altura / 2) > veiculoAtual.altura) {
-    vol.pos.y = veiculoAtual.altura - (vol.altura / 2);
-  }
-}
+  blocoEmTransito.forEach((vol, idx) => {
+    const pIdx = volumesPatio.findIndex(v => v.uid === vol.uid);
+    if (pIdx !== -1) volumesPatio.splice(pIdx, 1);
 
-// Inserção automática inteligente
-window.adicionarVolumeAoVeiculoInteligente = function(uid) {
-  const idx = volumesPatio.findIndex(v => v.uid === uid);
-  if (idx === -1) return;
+    vol.pos.x = posX;
+    vol.pos.z = posZ;
+    vol.pos.y = (posYBase - (ref.altura * blocoEmTransito.length / 2)) + (idx * altUnid) + (altUnid / 2);
 
-  const vol = volumesPatio.splice(idx, 1)[0];
-  
-  vol.pos.x = -veiculoAtual.comprimento / 2 + (vol.prof / 2) + 0.1;
-  vol.pos.z = 0;
+    volumesNoCarro.push(vol);
+  });
 
-  recalcularEmpilhamentoVolume(vol);
-  validarLimitesVeiculo(vol);
+  // Limpeza
+  if (meshPreviewBloco) scene.remove(meshPreviewBloco);
+  meshPreviewBloco = null;
+  blocoEmTransito = [];
+  modoPosicionamentoAtivo = false;
 
-  volumesNoCarro.push(vol);
-  volumeSelecionadoUID = vol.uid;
-
-  renderizerVolumes3DNaCena();
+  renderizarVolumes3DNaCena();
   atualizarPatioEDock();
   atualizarContadoresProgresso();
   calcularBalancoPeso3D();
   renderizarPainelInspecao();
-};
+}
 
-window.carregarBlocoInteiro = function(codigo, volNum) {
-  const paraMover = volumesPatio.filter(v => v.codigo === codigo && v.volNum === volNum);
-  paraMover.forEach(v => adicionarVolumeAoVeiculoInteligente(v.uid));
-};
+function criarTexturaEtiqueta(vol) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
 
-window.retornarVolumeAoPatio = function(uid) {
-  const idx = volumesNoCarro.findIndex(v => v.uid === uid);
-  if (idx === -1) return;
+  ctx.fillStyle = `#${vol.corHex.toString(16).padStart(6, '0')}`;
+  ctx.fillRect(0, 0, 256, 128);
 
-  const vol = volumesNoCarro.splice(idx, 1)[0];
-  volumesPatio.push(vol);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(8, 8, 240, 112);
 
-  if (volumeSelecionadoUID === uid) volumeSelecionadoUID = null;
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 20px Arial';
+  ctx.fillText(`${vol.codigo}`, 15, 35);
+  ctx.font = '14px Arial';
+  ctx.fillText(`Grade: ${vol.grade}`, 15, 60);
+  ctx.fillText(`VOL: ${vol.volNum} (${vol.volDesc})`, 15, 82);
+  ctx.fillText(`Jogo ${vol.jogoNum} - ${vol.peso}kg`, 15, 104);
 
-  renderizerVolumes3DNaCena();
-  atualizarPatioEDock();
-  atualizarContadoresProgresso();
-  calcularBalancoPeso3D();
-  renderizarPainelInspecao();
-};
+  return new THREE.CanvasTexture(canvas);
+}
 
-window.ajustarPosicaoVolume = function(eixo, delta) {
-  if (!volumeSelecionadoUID) return;
-  const vol = volumesNoCarro.find(v => v.uid === volumeSelecionadoUID);
-  if (!vol) return;
-
-  vol.pos[eixo] += delta;
-
-  if (eixo === 'x' || eixo === 'z') recalcularEmpilhamentoVolume(vol);
-  validarLimitesVeiculo(vol);
-
-  renderizerVolumes3DNaCena();
-  calcularBalancoPeso3D();
-};
-
-window.rotacionarVolumeSelecionado = function(eixo, angulo) {
-  if (!volumeSelecionadoUID) return;
-  const vol = volumesNoCarro.find(v => v.uid === volumeSelecionadoUID);
-  if (!vol) return;
-
-  vol.rot[eixo] += angulo;
-  renderizerVolumes3DNaCena();
-};
-
-function renderizerVolumes3DNaCena() {
+function renderizarVolumes3DNaCena() {
   meshesInTruck.forEach(mesh => truckContainerGroup.remove(mesh));
   meshesInTruck = [];
 
   volumesNoCarro.forEach(vol => {
     const geo = new THREE.BoxGeometry(vol.prof, vol.altura, vol.largura);
-    const texture = criarTexturaEtiqueta(vol);
+    const textureEtiqueta = criarTexturaEtiqueta(vol);
 
     const matCor = new THREE.MeshStandardMaterial({ color: vol.corHex, roughness: 0.4 });
-    const matEtiqueta = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.3 });
+    const matEtiqueta = new THREE.MeshStandardMaterial({ map: textureEtiqueta });
 
-    // Materiais em cada face (Etiqueta nas faces frontais/traseiras para fácil leitura)
-    const materials = [matCor, matCor, matCor, matCor, matEtiqueta, matEtiqueta];
+    // Aplica etiqueta na face frontal e traseira
+    const materiais = [matCor, matCor, matCor, matCor, matEtiqueta, matEtiqueta];
 
-    const mesh = new THREE.Mesh(geo, materials);
+    const mesh = new THREE.Mesh(geo, materiais);
     mesh.position.set(vol.pos.x, vol.pos.y, vol.pos.z);
     mesh.rotation.set(vol.rot.x, vol.rot.y, vol.rot.z);
 
     if (vol.uid === volumeSelecionadoUID) {
       const edgesGeo = new THREE.EdgesGeometry(geo);
       const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 3 });
-      const wireframe = new THREE.LineSegments(edgesGeo, lineMat);
-      mesh.add(wireframe);
+      mesh.add(new THREE.LineSegments(edgesGeo, lineMat));
     }
 
     mesh.userData = { uid: vol.uid };
@@ -456,17 +427,17 @@ function renderizerVolumes3DNaCena() {
 function atualizarPatioEDock() {
   const dock = document.getElementById('dock-patio-volumes');
   if (!dock) return;
+
   dock.innerHTML = '';
 
   if (volumesPatio.length === 0) {
-    dock.innerHTML = `<p style="font-size:0.8rem; color:#64748b; text-align:center; padding:15px;">Todos os volumes foram carregados na caçamba!</p>`;
+    dock.innerHTML = `<p style="font-size:0.8rem; color:#64748b; text-align:center; padding:15px;">Todos os volumes foram carregados!</p>`;
     return;
   }
 
-  // Agrupa os volumes no pátio em blocos homogêneos
   const grupos = {};
   volumesPatio.forEach(v => {
-    const chave = `${v.codigo}_${v.volNum}`;
+    const chave = `${v.prodId}_${v.volNum}`;
     if (!grupos[chave]) grupos[chave] = [];
     grupos[chave].push(v);
   });
@@ -479,25 +450,63 @@ function atualizarPatioEDock() {
     card.className = 'vol-card-dock';
     card.style.borderLeft = `6px solid #${primeiro.corHex.toString(16).padStart(6, '0')}`;
     card.innerHTML = `
-      <strong style="color:#0f172a;">${primeiro.codigo} - Grade: ${primeiro.grade}</strong><br>
-      <span style="font-size:0.75rem; color:#0284c7; font-weight:bold;">Vol ${primeiro.volNum}: ${primeiro.volDesc}</span><br>
-      <small>Disponível no pátio: <strong>${lista.length} bloco(s)</strong></small><br>
-      <small>Dim: ${primeiro.prof}m(C) x ${primeiro.largura}m(L) x ${primeiro.altura}m(A) | ${primeiro.peso}kg</small>
-      <div style="margin-top: 6px; display:flex; gap:5px;">
-        <button class="btn-primary" style="padding: 3px 6px; font-size: 0.7rem; flex:1;" onclick="adicionarVolumeAoVeiculoInteligente('${primeiro.uid}')">➕ Mover 1 Unid.</button>
-        <button class="btn-secondary" style="padding: 3px 6px; font-size: 0.7rem;" onclick="carregarBlocoInteiro('${primeiro.codigo}', '${primeiro.volNum}')">📦 Mover Bloco (${lista.length})</button>
+      <strong style="color:#0f172a;">${primeiro.codigo} - ${primeiro.descricaoProd}</strong><br>
+      <span style="font-size:0.75rem; color:#0284c7; font-weight:bold;">Grade: ${primeiro.grade} | Vol ${primeiro.volNum}: ${primeiro.volDesc}</span><br>
+      <small>Disponível no Pátio: <strong>${lista.length} un.</strong></small><br>
+      
+      <div style="margin-top: 8px; display:flex; align-items:center; gap:5px;">
+        <input type="number" id="qtd-mover-${primeiro.prodId}-${primeiro.volNum}" value="${lista.length}" min="1" max="${lista.length}" style="width:50px; padding:3px; font-size:0.75rem;">
+        <button class="btn-primary" style="padding: 3px 8px; font-size: 0.7rem; flex:1;" onclick="executarMovimentoInput('${primeiro.prodId}', '${primeiro.volNum}')">🎯 Escolher Posição no Carro</button>
       </div>
     `;
     dock.appendChild(card);
   });
 }
 
+window.executarMovimentoInput = function(prodId, volNum) {
+  const input = document.getElementById(`qtd-mover-${prodId}-${volNum}`);
+  const qtd = parseInt(input.value) || 1;
+  prepararMovimentoBloco(prodId, volNum, qtd);
+};
+
+window.ajustarPosicaoVolume = function(eixo, delta) {
+  if (!volumeSelecionadoUID) return;
+  const vol = volumesNoCarro.find(v => v.uid === volumeSelecionadoUID);
+  if (!vol) return;
+
+  vol.pos[eixo] += delta;
+
+  const meioComp = veiculoAtual.comprimento / 2;
+  const meioLarg = veiculoAtual.largura / 2;
+  const altMax = veiculoAtual.altura;
+
+  if (vol.pos.x - (vol.prof/2) < -meioComp) vol.pos.x = -meioComp + (vol.prof/2);
+  if (vol.pos.x + (vol.prof/2) > meioComp) vol.pos.x = meioComp - (vol.prof/2);
+
+  if (vol.pos.z - (vol.largura/2) < -meioLarg) vol.pos.z = -meioLarg + (vol.largura/2);
+  if (vol.pos.z + (vol.largura/2) > meioLarg) vol.pos.z = meioLarg - (vol.largura/2);
+
+  if (vol.pos.y - (vol.altura/2) < 0.04) vol.pos.y = 0.04 + (vol.altura/2);
+  if (vol.pos.y + (vol.altura/2) > altMax) vol.pos.y = altMax - (vol.altura/2);
+
+  renderizarVolumes3DNaCena();
+  calcularBalancoPeso3D();
+};
+
+window.rotacionarVolumeSelecionado = function(eixo, angulo) {
+  if (!volumeSelecionadoUID) return;
+  const vol = volumesNoCarro.find(v => v.uid === volumeSelecionadoUID);
+  if (!vol) return;
+
+  vol.rot[eixo] += angulo;
+  renderizarVolumes3DNaCena();
+};
+
 function renderizarPainelInspecao() {
   const container = document.getElementById('conteudo-painel-inspecao');
-  if (!container) return;
   
   if (!volumeSelecionadoUID) {
-    container.innerHTML = `<p style="font-size: 0.8rem; color: #64748b;">Nenhuma caixa selecionada. Clique ou arraste qualquer caixa na caçamba 3D para ajustá-la.</p>`;
+    container.innerHTML = `<p style="font-size: 0.8rem; color: #64748b;">Clique em qualquer caixa no 3D para inspecioná-la ou ajustá-la.</p>`;
     return;
   }
 
@@ -507,9 +516,8 @@ function renderizarPainelInspecao() {
   container.innerHTML = `
     <div style="background:#fff; padding:10px; border-radius:6px; border-left: 4px solid #${vol.corHex.toString(16).padStart(6, '0')}; margin-bottom:12px;">
       <strong style="color: #0284c7;">📦 ${vol.codigo} - ${vol.descricaoProd}</strong><br>
-      <span style="font-size:0.8rem;">Jogo nº ${vol.jogoNum} | Vol: <strong>${vol.volNum} (${vol.volDesc})</strong></span><br>
-      <small>Grade: ${vol.grade} | Peso: <strong>${vol.peso} kg</strong></small><br>
-      <small>Dimensões reais: C: ${vol.prof}m | L: ${vol.largura}m | A: ${vol.altura}m</small>
+      <span style="font-size:0.8rem;">Grade: <strong>${vol.grade}</strong> | Jogo nº ${vol.jogoNum}</span><br>
+      <small>Volume: <strong>${vol.volNum} (${vol.volDesc})</strong> | Peso: <strong>${vol.peso} kg</strong></small>
     </div>
 
     <h5 style="font-size:0.8rem; margin-bottom:6px;">📍 Ajuste Fino de Posição:</h5>
@@ -522,7 +530,7 @@ function renderizarPainelInspecao() {
       <button class="btn-secondary" style="font-size:0.75rem" onclick="ajustarPosicaoVolume('y', -0.1)">⬇ Descer (-Y)</button>
     </div>
 
-    <h5 style="font-size:0.8rem; margin-bottom:6px;">🔄 Rotação 3D (Deitado / Em Pé):</h5>
+    <h5 style="font-size:0.8rem; margin-bottom:6px;">🔄 Rotação 3D:</h5>
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:12px;">
       <button class="btn-secondary" style="font-size:0.75rem" onclick="rotacionarVolumeSelecionado('y', Math.PI/2)">🔄 Girar 90°</button>
       <button class="btn-secondary" style="font-size:0.75rem" onclick="rotacionarVolumeSelecionado('z', Math.PI/2)">📐 Deitar / Em pé</button>
@@ -532,11 +540,47 @@ function renderizarPainelInspecao() {
   `;
 }
 
+window.retornarVolumeAoPatio = function(uid) {
+  const idx = volumesNoCarro.findIndex(v => v.uid === uid);
+  if (idx === -1) return;
+
+  const vol = volumesNoCarro.splice(idx, 1)[0];
+  volumesPatio.push(vol);
+
+  if (volumeSelecionadoUID === uid) volumeSelecionadoUID = null;
+
+  renderizarVolumes3DNaCena();
+  atualizarPatioEDock();
+  atualizarContadoresProgresso();
+  calcularBalancoPeso3D();
+  renderizarPainelInspecao();
+};
+
+function gerarLegendaCoresAbil() {
+  const container = document.getElementById('painel-legenda-cores');
+  if (!container) return;
+
+  let html = `<h4 style="font-size:0.9rem; color:#0284c7; margin-bottom:8px;">🎨 Legenda de Cores por Produto / Grade:</h4><div style="display:flex; flex-wrap:wrap; gap:10px;">`;
+
+  itensSimulacaoCache.forEach(item => {
+    const hex = `#${item.corHex.toString(16).padStart(6, '0')}`;
+    html += `
+      <div style="display:flex; align-items:center; gap:6px; background:#fff; padding:6px 10px; border-radius:5px; border:1px solid #cbd5e1; font-size:0.8rem;">
+        <div style="width:16px; height:16px; background:${hex}; border-radius:3px;"></div>
+        <span><strong>${item.produto.codigo}</strong> (${item.produto.grade || 'Padrão'})</span>
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
 function atualizarContadoresProgresso() {
   const container = document.getElementById('lista-contadores-progresso');
   if (!container) return;
-  let html = '';
 
+  let html = '';
   itensSimulacaoCache.forEach(item => {
     const totalJogos = item.qtdJogosTotal;
     const volsNoJogo = item.volumesDoJogo.length;
@@ -551,8 +595,8 @@ function atualizarContadoresProgresso() {
 
     html += `
       <div style="font-size: 0.85rem; margin-bottom: 4px;">
-        • <strong>${item.produto.codigo} - ${item.produto.descricao}</strong>: 
-        <strong>${jogosCompletos} de ${totalJogos} Jogos Completos</strong> carregados (Volumes no carro: ${totalVolsNoCarro} / ${totalJogos * volsNoJogo})
+        • <strong>${item.produto.codigo} - ${item.produto.descricao}</strong> (Grade: ${item.produto.grade || 'Única'}): 
+        <strong>${jogosCompletos} de ${totalJogos} Jogos Completos</strong> (${totalVolsNoCarro} de ${totalJogos * volsNoJogo} vol)
       </div>
     `;
   });
@@ -596,5 +640,30 @@ function atualizarStat(id, texto, alerta) {
     el.className = alerta ? 'weight-indicator weight-alert' : 'weight-indicator weight-ok';
   }
 }
+
+// Futuro Aprendizado e Inteligência Artificial: Salvar Padrão no Firebase
+window.salvarModeloCarregamentoBD = async function() {
+  if (volumesNoCarro.length === 0) return alert("Nenhum volume no carro para salvar!");
+
+  const modeloData = {
+    dataCriacao: new Date().toISOString(),
+    veiculo: veiculoAtual,
+    quantidadeVolumes: volumesNoCarro.length,
+    disposicaoVolumes: volumesNoCarro.map(v => ({
+      codigo: v.codigo,
+      grade: v.grade,
+      volNum: v.volNum,
+      posicaoX: v.pos.x,
+      posicaoY: v.pos.y,
+      posicaoZ: v.pos.z,
+      rotacaoX: v.rot.x,
+      rotacaoY: v.rot.y,
+      rotacaoZ: v.rot.z
+    }))
+  };
+
+  await addDoc(collection(db, "modelos_carregamento"), modeloData);
+  alert("Modelo de carregamento salvo no banco com sucesso! Ele será utilizado como padrão para a montagem inteligente.");
+};
 
 carregarSelectsSimulacao();
