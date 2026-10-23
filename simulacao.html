@@ -9,6 +9,9 @@
   <!-- Three.js e OrbitControls -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Geração de PDF profissional -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 
 <body>
@@ -22,9 +25,9 @@
     </nav>
   </header>
 
-  <main class="container" style="max-width: 1450px;">
+  <main class="container container-largo">
     <!-- ETAPA 1: SELEÇÃO DE PRODUTOS E VEÍCULO -->
-    <section class="card">
+    <section class="card no-print">
       <h2>1. Selecionar Produtos e Veículo para a Carga</h2>
       <p class="help-text">Selecione os produtos e quantidade de jogos. O sistema liberará todos os volumes individuais
         no pátio para você montar a carga livremente.</p>
@@ -50,15 +53,15 @@
     <div id="area-montagem-3d" class="card hidden">
       <h2>2. Ambiente 3D de Montagem Livre (Empilhamento e Inspeção)</h2>
       <p class="help-text">
-        <strong>Instruções:</strong> Clique em um volume no Pátio para adicioná-lo automaticamente no melhor espaço
-        disponível na caçamba.
-        <strong>Clique em qualquer caixa dentro do caminhão</strong> para selecioná-la, identificá-la ou ajustar sua
-        posição exata com o mouse e setas. O sistema impede que a carga ultrapasse as paredes da caçamba.
+        <strong>Como usar:</strong> no Pátio, escolha o volume e toque em <em>Escolher Posição no Carro</em>; toque no
+        local desejado dentro da caçamba e confirme.
+        <strong>Toque em qualquer caixa dentro do caminhão</strong> para selecioná-la: você pode mover só o volume ou o
+        <strong>bloco inteiro</strong> (o volume e toda a pilha acima dele) para frente, trás, esquerda e direita.
+        A carga não ultrapassa as paredes nem o teto da caçamba.
       </p>
 
       <!-- INDICADORES DE PESO E EQUILÍBRIO -->
-      <div
-        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 15px;">
+      <div class="grid-indicadores">
         <div id="stat-frente" class="weight-indicator weight-ok">Frente: 0 kg (0%)</div>
         <div id="stat-meio" class="weight-indicator weight-ok">Centro: 0 kg (0%)</div>
         <div id="stat-tras" class="weight-indicator weight-ok">Trás: 0 kg (0%)</div>
@@ -66,42 +69,56 @@
       </div>
 
       <!-- CONTADORES DE JOGOS -->
-      <div class="resumo-box" style="margin-bottom: 15px;">
-        <h4 style="margin-bottom: 5px; color: #0284c7;">📊 Progresso dos Jogos de Produtos:</h4>
+      <div class="resumo-box">
+        <h4 class="resumo-titulo">📊 Progresso dos Jogos de Produtos:</h4>
         <div id="lista-contadores-progresso">Nenhum volume carregado.</div>
       </div>
 
-      <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-start;">
+      <!-- ANÁLISE DE DESCARGA -->
+      <div class="resumo-box">
+        <h4 class="resumo-titulo">🚚 Análise de Descarga (volumes presos por outro produto/grade):</h4>
+        <div id="painel-analise-descarga"><span class="txt-suave">Posicione volumes na caçamba para ver a análise.</span></div>
+      </div>
 
-        <!-- PÁTIO DE VOLUMES -->
-        <div style="width: 290px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px;">
-          <h4 style="font-size: 0.9rem; margin-bottom: 10px; color: #0f172a;">📦 Pátio de Volumes Livres</h4>
-          <div id="dock-patio-volumes" style="max-height: 520px; overflow-y: auto;"></div>
-        </div>
+      <div class="montagem-layout">
 
         <!-- CANVAS 3D INTERATIVO -->
-        <div style="flex: 1; min-width: 450px;">
-          <div id="canvas-3d-viewport"
-            style="width: 100%; height: 550px; background: #090d16; border-radius: 8px; position: relative; overflow: hidden;">
-            <div
-              style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(15, 23, 42, 0.9); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 0.75rem;">
-              <strong>🎮 Controles 3D:</strong><br>
-              • Girar Câmera: Clique esquerdo + Arraste<br>
-              • Mover Câmera: Botão direito + Arraste<br>
-              • Zoom: Roda do mouse<br>
-              • <strong>Selecionar Caixa: Clique em cima da caixa no 3D</strong>
+        <div class="col-canvas">
+          <div id="canvas-3d-viewport" class="viewport-3d">
+            <!-- Barra de confirmação do posicionamento (celular e desktop) -->
+            <div id="barra-posicionamento" class="barra-posicionamento hidden">
+              <span id="barra-pos-texto">Toque no local desejado</span>
+              <div class="barra-botoes">
+                <button class="btn-primary btn-mini" onclick="confirmarPosicionamento()">✅ Confirmar</button>
+                <button class="btn-secondary btn-mini" onclick="girarBlocoPreview()">↻ Girar 90°</button>
+                <button class="btn-remove btn-mini" onclick="cancelarPosicionamento()">✖ Cancelar</button>
+              </div>
             </div>
           </div>
+          <details class="controles-3d">
+            <summary>🎮 Controles 3D</summary>
+            <ul>
+              <li>Girar câmera: 1 dedo (ou botão esquerdo + arrastar)</li>
+              <li>Mover câmera / zoom: 2 dedos (ou botão direito / roda do mouse)</li>
+              <li><strong>Selecionar caixa:</strong> toque (ou clique) na caixa</li>
+              <li>Etiquetas mostram FRENTE (cabine), ESQUERDA, DIREITA e o sentido da descarga (setas verdes)</li>
+            </ul>
+          </details>
         </div>
 
         <!-- PAINEL DE INSPEÇÃO E AJUSTE FINO DA CAIXA SELECIONADA -->
-        <div style="width: 310px; background: #f1f5f9; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px;"
-          id="painel-inspecao-caixa">
-          <h4 style="font-size: 0.9rem; color: #0284c7; margin-bottom: 10px;">🔍 Inspeção e Ajuste Fino</h4>
+        <div class="col-inspecao" id="painel-inspecao-caixa">
+          <h4 class="col-titulo">🔍 Inspeção e Movimentação</h4>
           <div id="conteudo-painel-inspecao">
-            <p style="font-size: 0.8rem; color: #64748b;">Nenhuma caixa selecionada. Clique em uma caixa dentro da
-              caçamba 3D para ver a qual produto pertence, seu peso, dimensões e ajustar sua posição ou rotação.</p>
+            <p class="txt-suave">Nenhuma caixa selecionada. Toque em uma caixa dentro da caçamba 3D para ver a qual
+              produto pertence, seu peso, e mover o volume ou o bloco inteiro.</p>
           </div>
+        </div>
+
+        <!-- PÁTIO DE VOLUMES -->
+        <div class="col-patio">
+          <h4 class="col-titulo">📦 Pátio de Volumes Livres</h4>
+          <div id="dock-patio-volumes" class="dock-patio"></div>
         </div>
 
       </div>
@@ -109,14 +126,32 @@
       <!-- PAINEL DE LEGENDA DE CORES DAS GRADES -->
       <div id="painel-legenda-cores" style="margin-top: 15px;"></div>
 
+      <!-- DADOS DO RELATÓRIO -->
+      <div class="resumo-box no-print" style="margin-top: 20px;">
+        <h4 class="resumo-titulo">📝 Dados que aparecem no PDF (opcional):</h4>
+        <div class="form-grid">
+          <div class="field"><label>Cliente / Destino</label><input type="text" id="rel-cliente" placeholder="Ex.: Loja Centro - CD Serra"></div>
+          <div class="field"><label>Fornecedor</label><input type="text" id="rel-fornecedor" placeholder="(usa o do cadastro se vazio)"></div>
+          <div class="field"><label>Placa do veículo</label><input type="text" id="rel-placa" placeholder="Ex.: ABC1D23"></div>
+          <div class="field"><label>Pedido / NF</label><input type="text" id="rel-pedido" placeholder="Ex.: PED 12345"></div>
+        </div>
+        <div class="field" style="margin-top: 10px;">
+          <label>Observações</label>
+          <input type="text" id="rel-obs" placeholder="Ex.: Descarregar primeiro os jogos da grade Avelã">
+        </div>
+      </div>
+
       <!-- AÇÕES DE EXPORTAÇÃO E SALVAMENTO DE PADRÃO IA -->
-      <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px;">
-        <button class="btn-primary" onclick="window.print()">🖨️ Gerar PDF / Imprimir Relatório de Carga</button>
-        <button class="btn-secondary" onclick="salvarModeloCarregamentoBD()"
-          style="background: #10b981; color: white;">💾 Salvar Padrão no Banco (Para Aprendizado IA)</button>
+      <div class="form-actions acoes-finais no-print">
+        <button class="btn-primary" onclick="gerarRelatorioPDF()">📄 Baixar PDF Profissional</button>
+        <button class="btn-secondary" onclick="gerarRelatorioPDF(true)">📤 Compartilhar PDF</button>
+        <button class="btn-secondary" onclick="window.print()">🖨️ Imprimir tela</button>
+        <button class="btn-secondary btn-salvar" onclick="salvarModeloCarregamentoBD()">💾 Salvar Padrão no Banco (Para Aprendizado IA)</button>
       </div>
     </div>
   </main>
+
+  <div id="toast-msg" class="toast"></div>
 
   <script type="module" src="simulacao.js"></script>
 </body>
